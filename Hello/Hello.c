@@ -8,13 +8,14 @@
 MODULE_LICENSE("Dual BSD/GPL");
 static int hello_init(void)
 {
-    free_irq(1, NULL);
+    disable_irq(1);
     printk(KERN_ALERT "Hello, world\n");
     return 0; 
 }
 static void hello_exit(void)
 {
     printk(KERN_ALERT "Goodbye, cruel world\n");
+    enable_irq(1);
 }
 module_init(hello_init);
 module_exit(hello_exit);
