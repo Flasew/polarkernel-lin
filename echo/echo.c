@@ -4,7 +4,10 @@
 #include <linux/kdev_t.h>
 #include <linux/types.h>
 #include <linux/slab.h>
+#include <linux/cdev.h> 
+#include <linux/fs.h>
 
+#include <asm/uaccess.h>
 #include <asm/io.h>
 
 #define BUF_SIZE 512
@@ -15,20 +18,19 @@
 
 static int echo_open(struct inode *, struct file *);
 static int echo_close(struct inode *, struct file *);
-static int 
-    echo_ioctl(struct inode *, struct file *, unsigned int, unsigned long);
-static ssize_t echo_read(struct file *, const char __user *, size_t, loff_t *); 
-static ssize_t echo_write(struct file *, const char __user *, size_t, loff_t *)
+static long echo_ioctl(struct file *, unsigned int, unsigned long);
+static ssize_t echo_read(struct file *, char *, size_t, loff_t *); 
+static ssize_t echo_write(struct file *, const char __user *, size_t, loff_t *);
 
 static int resize_buffer(size_t);
 
-struct file_operations echo_fops = {
+static struct file_operations echo_fops = {
     .owner   = THIS_MODULE,
     .open    = echo_open,
-    .release = echo_close,
     .write   = echo_write,
     .read    = echo_read,
-    .ioctl   = echo_ioctl, 
+    .unlocked_ioctl   = echo_ioctl, 
+    .release = echo_close
 };
 
 typedef struct echo_dev {
@@ -54,21 +56,30 @@ static int echo_close(struct inode * inode, struct file * filp) {
 }
 
 static ssize_t echo_read(struct file * filp, 
-                         const char __user * buffer, 
+                         char * buffer, 
                          size_t len, 
                          loff_t * offset) {
 
     int length;
-    int error;
+    int uncped;
+    int last;
+    size_t diff;
 
-    length = min(len, echo.message_length);
-    error = copy_to_user(buffer, echo.buffer, length);
-    if (error < 0) {
-        printk(KERN_ALERT "ERROR reading from echo\n");
-        return error;
+    diff = echo.message_length - *offset;
+    length = min(len, diff);
+    uncped = copy_to_user(buffer, echo.buffer, length);
+    if (uncped != 0) {
+        printk(KERN_ALERT "partial reading from echo\n");
+        *offset += length - uncped; 
+        return length - uncped;
     }
-    buffer[length] = '\0';
-    return error;
+    else { 
+        *offset += length;
+        last = min(len, echo.message_length);
+        buffer[last] = '\0';
+        printk(KERN_ALERT "length = %d\n", length);
+        return length;
+    }
 }
 
 static ssize_t echo_write(struct file * filp, 
@@ -77,29 +88,33 @@ static ssize_t echo_write(struct file * filp,
                           loff_t * offset) {
 
     int length;
-    int error;
+    int uncped;
 
-    length = min(len, echo.buffer_size);
-    error = copy_from_user(echo.buffer, buffer, length);
-    if (error < 0) {
+    *offset = 0;
+    length = min(len, echo.buffer_size - 1);
+    printk(KERN_ALERT "Write length %d\n",length);
+    uncped = copy_from_user(echo.buffer, buffer, length);
+    if (uncped != 0) {
         printk(KERN_ALERT "ERROR writing to echo\n");
-        return error;
+        return length - uncped;
     }
 
+    printk(KERN_ALERT "by return... %d\n",length);
     echo.buffer[length] = '\0';
-    return error;
+    echo.message_length = length;
+    return length;
 }
 
-static int echo_ioctl(struct inode * inode,
-                      struct file * filep, 
-                      unsigned int cmd, 
-                      unsigned long arg) {
+static long echo_ioctl(struct file * filep, 
+                       unsigned int cmd, 
+                       unsigned long arg) {
 
     int error = 0;
 
     switch (cmd) {
 
         case ECHO_IOC_SET_BUF_SZ:
+            printk(KERN_ALERT "Resizing bufsiz to %lu...\n", arg);
             if (arg >= 128 && arg <= 8192) {
                 error = resize_buffer(arg);
                 if (error != 0) {
@@ -117,6 +132,7 @@ static int echo_ioctl(struct inode * inode,
 
         case ECHO_IOC_CLR_BUF:
             memset(echo.buffer, 0, echo.buffer_size);
+            echo.message_length = 0;
             break;
 
         default: 
@@ -128,18 +144,23 @@ static int echo_ioctl(struct inode * inode,
 
 static int resize_buffer(size_t new_size) {
 
-    krealloc(echo.buffer, new_size, GFP_KERNEL);
+    char * temp;
+    temp = krealloc(echo.buffer, new_size, GFP_KERNEL);
     if (!echo.buffer) {
         printk(KERN_ALERT "ERROR: reallcate buffer failed\n");
         return -ENOMEM;
     }
-    reutrn 0;
+    echo.buffer = temp;
+    return 0;
 }
 
 
 static int __init echo_init(void) {
 
     int error = 0;
+    static struct cdev cdev;
+
+    echo.cdev = &cdev;
 
     echo.buffer = kmalloc(BUF_SIZE, GFP_KERNEL);
     if(!echo.buffer) {
@@ -155,20 +176,15 @@ static int __init echo_init(void) {
         return error;
     }
 
-    echo.cdev = cdev_alloc();
-    if(!echo.cdev) {
-        printk(KERN_ALERT "ERROR: allcate cdev failed\n");
-        return -ENOMEM;
-    }
-    echo.cdev->ops = &echo_fops;
-    
+    cdev_init(echo.cdev, &echo_fops);
     error = cdev_add(echo.cdev, echo.dev, 1);
     if (error) {
         printk(KERN_ALERT "ERROR: add cdev failed\n");
         return error;
     }
 
-    printk(KERN_ALERT "Echo driver loaded\n");
+    printk(KERN_ALERT "Echo driver loaded, Maj %d: Min %d\n", 
+            MAJOR(echo.dev), MINOR(echo.dev));
     return error;
 
 }
