@@ -10,14 +10,16 @@
 #ifndef _GIH_H
 #define _GIH_H
 
+MODULE_LICENSE("Dual BSD/GPL");
+
 #define TRUE 1
 #define FALSE 0
 
+#define DEBUG 1
+
 /* device names */
-#define HANDLER_DEV "gih"           /* device that accepts user input */
-#define INTR_LOG    "ilog"          /* logging device for interrupt happen */
-#define WQ_ENTR_LOG "wqlogn"        /* logging device for entering work queue */
-#define WQ_EXIT_LOG "wqlogx"        /* logging device for exiting work queue */
+#define GIH_DEV     "gih"           /* device that accepts user input */
+#define LOG         "gihlog"        /* logging device for interrupt happen */
 
 /* minor number for all logging devices */
 #define INTR_LOG_MINOR 0
@@ -25,58 +27,69 @@
 #define WQ_X_LOG_MINOR 2
 
 /* gih ioctl */
-/* structure for configurating the gih device, passed in by GIH */
-struct gih_conf {
-    int irq;                    /* irq number */
-    size_t write_size           /* how much to write each time */
-    char * dest;                /* destination path of file */
-};
-
 #define GIH_IOC 'G'
-#define GIH_IOC_CONFIG     _IOW(GIH_IOC, 1, struct gih_conf *) /* conf. */
-#define GIH_IOC_SET_WRT_SZ _IOW(GIH_IOC, 2, int) /* change write size */
+/*
+ * ioctl operations are for gih configuration.
+ * Current implementation only allows configuration on driver load 
+ * i.e. can't change it at run time
+ *
+ * This could be changed later by manipulating open and close functions,
+ * (It's safer, though, to keep it in this way and modify the userland app.)
+ */
+#define GIH_IOC_CONFIG_IRQ      _IOW(GIH_IOC, 1, int) 
+#define GIH_IOC_CONFIG_SLEEP_T  _IOW(GIH_IOC, 2, unsigned int) 
+#define GIH_IOC_CONFIG_WRT_SZ   _IOW(GIH_IOC, 3, size_t) 
+#define GIH_IOC_CONFIG_PATH     _IOW(GIH_IOC, 4, const char *)
+#define GIH_IOC_CONFIG_FINISH   _IOW(GIH_IOC, 5)
 
 /* individual log, contains a timespec and a irq indntifier */
 struct log {
     ssize_t byte_sent;              /* number of bytes sent this time
                                        only set by wqlogx device */
-    unsigned long irq_id;           /* irq identifier */
+    unsigned long irq_count;        /* irq identifier */
     struct timeval time;            /* time of the log */
 };
 
 /* FIFO buffer for logging devices */
 #define LOG_FIFO_SZ 4096                        /* buffer size of FIFO */
+#define LOG_STR_BUF_SZ 256                      /* max len for log string */
 DECLARE_KFIFO(ilog_buf, struct log, FIFO_SZ);    
 DECLARE_KFIFO(wq_n_buf, struct log, FIFO_SZ);
 DECLARE_KFIFO(wq_x_buf, struct log, FIFO_SZ);
 
 /* log device structure */
 typedef struct log_dev {
-    unsigned long irq_id;           /* total number of irq caught,
-                                       counted differently for workqueue's and
-                                       intr's */
+    unsigned long irq_count;        /* total number of irq caught */
+    dev_t dev_num;                  /* device number */
+    struct mtx dev_open;          /* device can only open once a time*/
     struct kfifo buffer;            /* FIFO buffer */
     struct cdev cdev;               /* char device */
 } log_dev;
 
 /* gih device structure */
-#define DATA_FIFO_SZ 65536
+#define DATA_FIFO_SZ 1 << 20        /* 1MB */
 DECLARE_KFIFO(data_buf, unsigned char, DATA_FIFO_SZ);
 
 #define IRQ_NAME "gih irq handler"
 #define IRQ_WQ_NAME "irq work queue"
+#define PATH_MAX_LEN 128            /* Just a file name... should be enough */
 
 typedef struct gih_dev {
+    const int irq;                          /* irq line to be catched */
+    const unsigned int sleep_msec;          /* time to sleep */
+    const size_t write_size;                /* how much to write each time */
     bool configured;                        /* device conf status */
-    int irq;                                /* irq line to be catched */
-    size_t data_wait;                       /* number of data on wait */
-    size_t write_size;                      /* how much to write each time */
-    const char * path;                      /* destination file path */
+    atomic64_t data_wait;                   /* number of data on wait */
+    dev_t dev_num;                          /* device number */
     struct workqueue_struct * irq_wq;       /* work queue */
-    struct work_struct * work;              /* work to be put in the queue */
     struct file * dest_filp;                /* destination file pointer */
+    struct work_struct work;                /* work to be put in the queue */
+    struct mtx dev_open;                    /* dev can only be opening once */
+    struct mtx wrt_lock;                    /* mutex to protect write to file */
+    struct cdev gih_cdev;                   /* gih char device */
+    struct cdev log_cdev;                   /* log char device */
     struct kfifo data_buf;                  /* buffer of data */
-    struct cdev cdev;                       /* char device */
+    char path[PATH_MAX_LEN];                /* destination file path */
 } gih_dev;
 
 #endif
