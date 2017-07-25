@@ -5,3 +5,4 @@
 *.mod*
 modules.order
 Module.symvers
+config
