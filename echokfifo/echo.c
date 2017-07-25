@@ -11,11 +11,6 @@
 #include <asm/uaccess.h>
 #include <asm/io.h>
 
-#define BUF_SIZE 512
-
-#define ECHO_IOC 'E'
-#define ECHO_IOC_SET_BUF_SZ     _IOW(ECHO_IOC, 1, int)
-#define ECHO_IOC_CLR_BUF        _IO(ECHO_IOC, 2)
 
 DEFINE_KFIFO(echo_buf, unsigned char, 1024);
 
@@ -110,6 +105,7 @@ static int __init echo_init(void) {
     static struct cdev cdev;
 
     echo.cdev = &cdev;
+    echo.buffer = echo_buf;
 
     error = alloc_chrdev_region(&echo.dev, 0, 1, "echo");
     if (error) {
