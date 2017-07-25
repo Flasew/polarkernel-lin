@@ -59,11 +59,12 @@ DECLARE_KFIFO(wq_x_buf, struct log, FIFO_SZ);
 
 /* log device structure */
 typedef struct log_dev {
-    unsigned long irq_count;        /* total number of irq caught */
+    unsigned long irq_count;        /* total number of irq caught; in N & X
+                                       devices they reperesent number of 
+                                       not missed irq */
     dev_t dev_num;                  /* device number */
-    struct mtx dev_open;          /* device can only open once a time*/
+    struct mtx dev_open;            /* device can only open once a time*/
     struct kfifo buffer;            /* FIFO buffer */
-    struct cdev cdev;               /* char device */
 } log_dev;
 
 /* gih device structure */

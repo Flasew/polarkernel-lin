@@ -27,9 +27,13 @@
 #include <linux/cdev.h> 
 #include <linux/atomic.h>
 #include <linux/string.h>
+#include <linux/buffer_head.h>
+#include <linux/fcntl.h>
+#include <linux/ktime.h>
 
 #include <asm/atomic64_32.h>
 #include <asm/uaccess.h>
+#include <asm/segment.h>
 #include <asm/irq.h>
 #include <asm/io.h>
 
@@ -99,7 +103,7 @@ gih_open(struct inode * inode, struct file * filp)
             return error;
         }
 
-        gih.dest_filp = open_file(gih.path);
+        gih.dest_filp = file_open(gih.path);
     }
     return error;
 }
@@ -117,7 +121,7 @@ gih_close(struct inode * inode, struct file * filp)
     destroy_workqueue(gih.irq_wq);
     /* this would result as dumping all unsent data, skipping the intr */
     dwait = atomic64_read(&gih.data_wait);
-    copied = file_write_kfifo(gih.dest_filp, gih.data_buf, dwait);
+    copied = file_write_kfifo(gih.dest_filp, &gih.data_buf, dwait);
     if  (copied != dwait) {
         if  (copied < 0) {
             printk(KERN_ALERT "[gih] ERROR writng the rest of data\n");
@@ -229,10 +233,14 @@ static long gih_ioctl(struct file * filep,
 }
 
 static void 
-gih_do_work(void * dev_id) {
+gih_do_work(void * irq_count_in) {
+
+    int irq_count;
 
     if (DEBUG)
         printk(KERN_ALERT "[gih] Entering work queue function...\n");
+
+    irq_count = (unsigned long)irq_count_in;
 
     unsigned char output_chr = 0;
     size_t n_out_byte;            /* number of byte to output */
@@ -240,9 +248,12 @@ gih_do_work(void * dev_id) {
     struct log exit;
     struct log entry = {
         -1,
-        log_devices[WQ_N_LOG_MINOR].irq_count++,
+        irq_count,
         0
     };
+
+    log_devices[WQ_N_LOG_MINOR].irq_count++;
+
     do_gettimeofday(&entry.time);
     kfifo_put(&log_devices[WQ_N_LOG_MINOR].buffer, entry);
 
@@ -259,9 +270,11 @@ gih_do_work(void * dev_id) {
 
     mutex_unlock(&gih.wrt_lock);
 
+    log_devices[WQ_N_LOG_MINOR].irq_count++;
+
     exit = {
         out, 
-        log_devices[WQ_X_LOG_MINOR].irq_count++,
+        irq_count,
         0
     };
     do_gettimeofday(&exit.time);
@@ -283,7 +296,9 @@ static irqreturn_t gih_intr(int irq, void * data) {
     kfifo_put(&log_devices[INTR_LOG_MINOR].buffer, intr_log);
 
     /* perhaps also try kernal thread, given the work function in this way */
-    error = queue_work(gih.irq_wq, gih.work);
+    PREPARE_WORK(&gih.work, gih_do_work, )
+    error = queue_work(gih.irq_wq, gih.work,
+        (void*)log_devices[INTR_LOG_MINOR].irq_count);
 
     if (error) 
         printk(KERN_ALERT "[gih] WARNING: interrupt missed\n");
@@ -369,15 +384,15 @@ static int __init gih_init(void) {
     int log_major;
 
     INIT_KFIFO(data_buf);
-    gih.data_buf = data_buf;
+    gih.data_buf = *(struct kfifo *)&data_buf;
 
     INIT_KFIFO(ilog_buf);
     INIT_KFIFO(wq_n_buf);
     INIT_KFIFO(wq_x_buf);
 
-    log_devices[INTR_LOG_MINOR].buffer = ilog_buf;
-    log_devices[WQ_N_LOG_MINOR].buffer = wq_n_buf;
-    log_devices[WQ_X_LOG_MINOR].buffer = wq_x_buf;
+    log_devices[INTR_LOG_MINOR].buffer = *(struct kfifo *)&ilog_buf;
+    log_devices[WQ_N_LOG_MINOR].buffer = *(struct kfifo *)&wq_n_buf;
+    log_devices[WQ_X_LOG_MINOR].buffer = *(struct kfifo *)&wq_x_buf;
 
     /* allocate Maj/Min for gih */
     error = alloc_chrdev_region(&gih.dev_num, 0, 1, GIH_DEV);
