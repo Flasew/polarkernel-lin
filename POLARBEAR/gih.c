@@ -30,8 +30,9 @@
 #include <linux/buffer_head.h>
 #include <linux/fcntl.h>
 #include <linux/ktime.h>
+#include <linux/delay.h>
 
-#include <asm/atomic64_32.h>
+/* #include <asm/atomic64_32.h> */
 #include <asm/uaccess.h>
 #include <asm/segment.h>
 #include <asm/irq.h>
@@ -46,7 +47,7 @@ static int gih_close(struct inode *, struct file *);
 static long gih_ioctl(struct file *, unsigned int, unsigned long);
 static ssize_t gih_write(struct file *, const char __user *, size_t, loff_t *);
 static irqreturn_t gih_intr(int, void *);
-static void gih_do_work(void *);
+static void gih_do_work(struct work_struct *);
 
 struct file_operations gih_fops = {
     .owner              = THIS_MODULE,
@@ -56,24 +57,22 @@ struct file_operations gih_fops = {
     .release            = gih_close
 };
 
-static gih_dev gih = 0;             /* gih device */
+static gih_dev gih = { 0 };             /* gih device */
 
 /* log devices */
 static int log_open(struct inode *, struct file *);
 static int log_close(struct inode *, struct file *);
-static ssize_t log_read(struct file *, char __user *, size_t, loff_t *);
+static ssize_t log_read(struct file *, char *, size_t, loff_t *);
 
 struct file_operations log_fops = {
     .owner   = THIS_MODULE,
     .read    = log_read,
-    .open    = log_read,
+    .open    = log_open,
     .release = log_close
 };
 
 static log_dev log_devices[3] = { 0 }; /* all the logging device, can be
                                           accessed by their minor number */
-
-
 static int 
 gih_open(struct inode * inode, struct file * filp) 
 {
@@ -86,10 +85,10 @@ gih_open(struct inode * inode, struct file * filp)
     atomic64_set(&gih.data_wait, 0);
     gih.irq_wq = create_singlethread_workqueue(IRQ_WQ_NAME);
     kfifo_reset(&gih.data_buf);
-    INIT_WORK(&gih.work, gih_do_work, NULL);
+    INIT_WORK(&gih.work, gih_do_work);
 
     /* if not configurated, it's first time, conf. from ioctl needed */
-    if (!gih.configurated) {
+    if (!gih.configured) {
         printk(KERN_ALERT "[gih] configuring with ioctl...\n");
         /* dump the rest of the work to ioctl */
         return 0;
@@ -97,13 +96,13 @@ gih_open(struct inode * inode, struct file * filp)
 
     else {
         error = request_irq(gih.irq, gih_intr, IRQF_SHARED,
-            gih.irq_name, (void*)&gih);
+            IRQ_NAME, (void*)&gih);
         if (error < 0) {
-            printk(KERN_ALERT "[gih] IRQ REQUEST ERROR: %d\n", err);
+            printk(KERN_ALERT "[gih] IRQ REQUEST ERROR: %d\n", error);
             return error;
         }
 
-        gih.dest_filp = file_open(gih.path);
+        gih.dest_filp = file_open(gih.path, O_WRONLY, S_IRWXUGO);
     }
     return error;
 }
@@ -129,7 +128,7 @@ gih_close(struct inode * inode, struct file * filp)
         } 
         else {
             printk(KERN_ALERT 
-                "[gih] WARNING: data lose occured, %d bytes lost\n", 
+                "[gih] WARNING: data lose occured, %lld bytes lost\n", 
                 dwait - copied);
         }
     } 
@@ -166,7 +165,7 @@ gih_write(struct file * filp,
 
         if (kfifo_is_full(&gih.data_buf)) {
             printk(KERN_ALERT "[gih] Warning: gih buffer is full, "
-            "%d bytes of data lost during writing\n",
+            "%zu bytes of data lost during writing\n",
             len - copied);
             return copied;
         }
@@ -187,7 +186,7 @@ static long gih_ioctl(struct file * filep,
     int length;
     int error;
 
-    if (gih.configurated) {
+    if (gih.configured) {
         return -EINVAL;
     }
 
@@ -196,9 +195,9 @@ static long gih_ioctl(struct file * filep,
         case GIH_IOC_CONFIG_IRQ:
             gih.irq = (int)arg;
             error = request_irq(gih.irq, gih_intr, IRQF_SHARED,
-                gih.irq_name, (void*)&gih);
+                IRQ_NAME, (void*)&gih);
                 if (error < 0) {
-                    printk(KERN_ALERT "[gih] IRQ REQUEST ERROR: %d\n", err);
+                    printk(KERN_ALERT "[gih] IRQ REQUEST ERROR: %d\n", error);
                     return error;
                 }
             break;
@@ -217,12 +216,12 @@ static long gih_ioctl(struct file * filep,
                 return -EINVAL;
             strncpy(gih.path, (const char *)arg, length);
             gih.path[length] = '\0';
-            gih.dest_filp = open_file(gih.path);
+            gih.dest_filp = file_open(gih.path, O_WRONLY, S_IRWXUGO);
             break;
 
         /* make sure to only call this after configuratoin */
         case GIH_IOC_CONFIG_FINISH:
-            gih.configurated = TRUE;
+            gih.configured = TRUE;
             printk(KERN_ALERT "[gih] configuration finished.\n");
             break;
 
@@ -232,53 +231,40 @@ static long gih_ioctl(struct file * filep,
     return 0;
 }
 
-static void 
-gih_do_work(void * irq_count_in) {
+static void gih_do_work(struct work_struct * work) {
 
-    int irq_count;
+    size_t n_out_byte;            /* number of byte to output */
+    size_t out = 0;               /* number of byte actually outputed */
+    struct log exit;
+    struct log entry;
+
+    entry.byte_sent = -1,
+    entry.irq_count = log_devices[WQ_N_LOG_MINOR].irq_count++;
 
     if (DEBUG)
         printk(KERN_ALERT "[gih] Entering work queue function...\n");
 
-    irq_count = (unsigned long)irq_count_in;
-
-    unsigned char output_chr = 0;
-    size_t n_out_byte;            /* number of byte to output */
-    size_t out = 0;               /* number of byte actually outputed */
-    struct log exit;
-    struct log entry = {
-        -1,
-        irq_count,
-        0
-    };
-
-    log_devices[WQ_N_LOG_MINOR].irq_count++;
-
     do_gettimeofday(&entry.time);
-    kfifo_put(&log_devices[WQ_N_LOG_MINOR].buffer, entry);
+    kfifo_put(&wq_n_buf, entry);
 
     mutex_lock(&gih.wrt_lock);
 
-    n_out_byte = min(kfifo_len(&gih.data_buf), gih.write_size);
+    n_out_byte = min((size_t)kfifo_len(&gih.data_buf), gih.write_size);
 
     msleep(gih.sleep_msec);
 
     while (out < n_out_byte) {
-        out += file_write_kfifo(gih.dest_filp, gih.data_buf, 1);
+        out += file_write_kfifo(gih.dest_filp, &gih.data_buf, 1);
         atomic64_dec(&gih.data_wait);
     }
 
     mutex_unlock(&gih.wrt_lock);
 
-    log_devices[WQ_N_LOG_MINOR].irq_count++;
+    exit.byte_sent = -1,
+    exit.irq_count = log_devices[WQ_X_LOG_MINOR].irq_count++;
 
-    exit = {
-        out, 
-        irq_count,
-        0
-    };
     do_gettimeofday(&exit.time);
-    kfifo_put(&log_devices[WQ_X_LOG_MINOR].buffer, exit);
+    kfifo_put(&wq_x_buf, exit);
 
     if (DEBUG)
         printk(KERN_ALERT "[gih] Exiting work queue function...\n");
@@ -287,18 +273,16 @@ gih_do_work(void * irq_count_in) {
 static irqreturn_t gih_intr(int irq, void * data) {
     /* enque work, write log */
     int error = 0;
-    struct log intr_log = {
-        -1, 
-        log_devices[INTR_LOG_MINOR].irq_count++,
-        0
-    }
+    struct log intr_log; 
+
+    intr_log.byte_sent = -1; 
+    intr_log.irq_count = log_devices[INTR_LOG_MINOR].irq_count++;
+
     do_gettimeofday(&intr_log.time);
-    kfifo_put(&log_devices[INTR_LOG_MINOR].buffer, intr_log);
+    kfifo_put(&ilog_buf, intr_log);
 
     /* perhaps also try kernal thread, given the work function in this way */
-    PREPARE_WORK(&gih.work, gih_do_work, )
-    error = queue_work(gih.irq_wq, gih.work,
-        (void*)log_devices[INTR_LOG_MINOR].irq_count);
+    error = queue_work(gih.irq_wq, &gih.work);
 
     if (error) 
         printk(KERN_ALERT "[gih] WARNING: interrupt missed\n");
@@ -326,19 +310,17 @@ static int log_close(struct inode * inode, struct file * filp) {
     unsigned int minor = iminor(inode);
     mutex_unlock(&log_devices[minor].dev_open);
 
-    filp->private_data = null;
+    filp->private_data = NULL;
 
     if (DEBUG)
         printk(KERN_ALERT "[log] Log device %u released\n", minor);
     return 0;
 }
 
-static ssize_t log_read(struct file * flip, 
+static ssize_t log_read(struct file * filp, 
                         char __user * buf, 
                         size_t len, 
                         loff_t * offset) {
-
-    if (*offset != 0) {return 0;}
 
     size_t amount_log;
     size_t finished_log; 
@@ -348,8 +330,10 @@ static ssize_t log_read(struct file * flip,
     log_dev device;
     struct log log;
 
-    device = *filp->private_data;
-    amount = kfifo_len(&device.buffer);
+    if (*offset != 0) {return 0;}
+
+    device = *(log_dev*)filp->private_data;
+    amount_log = kfifo_len(&device.buffer);
 
     /* this function doesn't do much of checking, 
        try to make enough read size in userland 
@@ -362,7 +346,7 @@ static ssize_t log_read(struct file * flip,
         kfifo_get(&device.buffer, &log);
 
         log_len = snprintf(buf, len - 1, 
-            "[ %ld.%ld], Intr cnt: %lu, w.sz: %d\n", 
+            "[ %ld.%ld], Intr cnt: %lu, w.sz: %zd\n", 
             (long)log.time.tv_sec, (long)log.time.tv_usec,
             log.irq_count, log.byte_sent);
 
@@ -386,9 +370,9 @@ static int __init gih_init(void) {
     INIT_KFIFO(data_buf);
     gih.data_buf = *(struct kfifo *)&data_buf;
 
-    INIT_KFIFO(ilog_buf);
-    INIT_KFIFO(wq_n_buf);
-    INIT_KFIFO(wq_x_buf);
+    // INIT_KFIFO(ilog_buf);
+    // INIT_KFIFO(wq_n_buf);
+    // INIT_KFIFO(wq_x_buf);
 
     log_devices[INTR_LOG_MINOR].buffer = *(struct kfifo *)&ilog_buf;
     log_devices[WQ_N_LOG_MINOR].buffer = *(struct kfifo *)&wq_n_buf;
@@ -411,7 +395,7 @@ static int __init gih_init(void) {
 
     /* allocate Maj/min for log */
     error = alloc_chrdev_region(&log_devices[INTR_LOG_MINOR].dev_num, 
-        0, 3, LOG_DEV);
+            0, 3, LOG_DEV);
     if (error) {
         printk(KERN_ALERT "[log] ERROR: allcate dev num failed\n");
         return error;
@@ -434,6 +418,19 @@ static int __init gih_init(void) {
     mutex_init(&log_devices[WQ_N_LOG_MINOR].dev_open);
     mutex_init(&log_devices[WQ_X_LOG_MINOR].dev_open);
 
+    if (DEBUG) {
+        printk(KERN_ALERT "[gih] [log] gih module loaded.\n");
+
+        printk(KERN_ALERT "[gih] GIH: Major: %d, Minor: %d\n",
+                gih_major, MINOR(gih.dev_num));
+        printk(KERN_ALERT "[log] Intr log: Major: %d, Minor: %d\n", 
+                log_major, MINOR(log_devices[INTR_LOG_MINOR].dev_num));
+        printk(KERN_ALERT "[log] WQ_N log: Major: %d, Minor: %d\n", 
+                log_major, MINOR(log_devices[WQ_N_LOG_MINOR].dev_num));
+        printk(KERN_ALERT "[log] WQ_X log: Major: %d, Minor: %d\n", 
+                log_major, MINOR(log_devices[WQ_X_LOG_MINOR].dev_num));
+    }
+
     return error;
 
 }
@@ -452,6 +449,8 @@ static void __exit gih_exit(void) {
     mutex_destroy(&log_devices[WQ_N_LOG_MINOR].dev_open);
     mutex_destroy(&log_devices[WQ_X_LOG_MINOR].dev_open);
 
+    if (DEBUG)
+        printk(KERN_ALERT "[gih] [log] gih module unloaded.\n");
 }
 
 module_init(gih_init);

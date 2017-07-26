@@ -19,7 +19,7 @@ MODULE_LICENSE("Dual BSD/GPL");
 
 /* device names */
 #define GIH_DEV     "gih"           /* device that accepts user input */
-#define LOG         "gihlog"        /* logging device for interrupt happen */
+#define LOG_DEV     "gihlog"        /* logging device for interrupt happen */
 
 /* minor number for all logging devices */
 #define INTR_LOG_MINOR 0
@@ -40,7 +40,7 @@ MODULE_LICENSE("Dual BSD/GPL");
 #define GIH_IOC_CONFIG_SLEEP_T  _IOW(GIH_IOC, 2, unsigned int) 
 #define GIH_IOC_CONFIG_WRT_SZ   _IOW(GIH_IOC, 3, size_t) 
 #define GIH_IOC_CONFIG_PATH     _IOW(GIH_IOC, 4, const char *)
-#define GIH_IOC_CONFIG_FINISH   _IOW(GIH_IOC, 5)
+#define GIH_IOC_CONFIG_FINISH   _IO(GIH_IOC, 5)
 
 /* individual log, contains a timespec and a irq indntifier */
 struct log {
@@ -53,9 +53,9 @@ struct log {
 /* FIFO buffer for logging devices */
 #define LOG_FIFO_SZ 4096                        /* buffer size of FIFO */
 #define LOG_STR_BUF_SZ 256                      /* max len for log string */
-DECLARE_KFIFO(ilog_buf, struct log, FIFO_SZ);    
-DECLARE_KFIFO(wq_n_buf, struct log, FIFO_SZ);
-DECLARE_KFIFO(wq_x_buf, struct log, FIFO_SZ);
+DEFINE_KFIFO(ilog_buf, struct log, LOG_FIFO_SZ);    
+DEFINE_KFIFO(wq_n_buf, struct log, LOG_FIFO_SZ);
+DEFINE_KFIFO(wq_x_buf, struct log, LOG_FIFO_SZ);
 
 /* log device structure */
 typedef struct log_dev {
@@ -63,12 +63,12 @@ typedef struct log_dev {
                                        devices they reperesent number of 
                                        not missed irq */
     dev_t dev_num;                  /* device number */
-    struct mtx dev_open;            /* device can only open once a time*/
+    struct mutex dev_open;          /* device can only open once a time*/
     struct kfifo buffer;            /* FIFO buffer */
 } log_dev;
 
 /* gih device structure */
-#define DATA_FIFO_SZ 1 << 20        /* 1MB */
+#define DATA_FIFO_SZ (1<<20)        /* 1MB */
 DECLARE_KFIFO(data_buf, unsigned char, DATA_FIFO_SZ);
 
 #define IRQ_NAME "gih irq handler"
@@ -76,17 +76,17 @@ DECLARE_KFIFO(data_buf, unsigned char, DATA_FIFO_SZ);
 #define PATH_MAX_LEN 128            /* Just a file name... should be enough */
 
 typedef struct gih_dev {
-    const int irq;                          /* irq line to be catched */
-    const unsigned int sleep_msec;          /* time to sleep */
-    const size_t write_size;                /* how much to write each time */
+    int irq;                                /* irq line to be catched */
+    unsigned int sleep_msec;                /* time to sleep */
+    size_t write_size;                      /* how much to write each time */
     bool configured;                        /* device conf status */
     atomic64_t data_wait;                   /* number of data on wait */
     dev_t dev_num;                          /* device number */
     struct workqueue_struct * irq_wq;       /* work queue */
     struct file * dest_filp;                /* destination file pointer */
     struct work_struct work;                /* work to be put in the queue */
-    struct mtx dev_open;                    /* dev can only be opening once */
-    struct mtx wrt_lock;                    /* mutex to protect write to file */
+    struct mutex dev_open;                  /* dev can only be opening once */
+    struct mutex wrt_lock;                  /* mutex to protect write to file */
     struct cdev gih_cdev;                   /* gih char device */
     struct cdev log_cdev;                   /* log char device */
     struct kfifo data_buf;                  /* buffer of data */

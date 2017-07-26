@@ -34,7 +34,7 @@ static struct file* file_open(const char* path, int flags, int rights) {
 }
 
 static inline void file_close(struct file* filp) {
-    filp_close(file, NULL);
+    filp_close(filp, NULL);
 }
 
 static int file_write(struct file* filp, 
@@ -47,7 +47,7 @@ static int file_write(struct file* filp,
     oldfs = get_fs();
     set_fs(get_ds());
 
-    ret = vfs_write(filp, data, size, &offset);
+    ret = vfs_write(filp, data, size, &filp->f_pos);
 
     set_fs(oldfs);
     return ret;
