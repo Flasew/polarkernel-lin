@@ -115,6 +115,13 @@ gih_close(struct inode * inode, struct file * filp)
 
     printk(KERN_ALERT "[gih] Releasing gih device...\n");
 
+    if (!gih.configured) {
+        printk(KERN_ALERT "[gih] Device still not configured.\n");
+        destroy_workqueue(gih.irq_wq);
+        mutex_unlock(&gih.dev_open);
+        return 0;
+    }
+
     free_irq(gih.irq, (void*)&gih);
     flush_workqueue(gih.irq_wq);
     destroy_workqueue(gih.irq_wq);
