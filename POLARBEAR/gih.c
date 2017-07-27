@@ -108,7 +108,7 @@ gih_open(struct inode * inode, struct file * filp)
     atomic64_set(&gih.data_wait, 0);
     gih.irq_wq = create_singlethread_workqueue(IRQ_WQ_NAME);
     kfifo_reset(&gih.data_buf);
-    // INIT_WORK(&gih.work, gih_do_work);
+    INIT_WORK(&gih.work, gih_do_work);
 
     /* if not configurated, it's first time, conf. from ioctl needed */
     if (!gih.configured) {
@@ -232,7 +232,7 @@ gih_write(struct file * filp,
         printk(KERN_ALERT "[gih] Warning: gih buffer is full, "
             "%zu byte loss occured.\n", len - avail);
 
-    length = min(len - 1, avail);
+    length = min(len, avail);
     
     kfifo_from_user(&gih.data_buf, buffer, length, &copied);
 
@@ -242,7 +242,7 @@ gih_write(struct file * filp,
     if (DEBUG) printk(KERN_ALERT "[gih] %d bytes written to gih.\n", copied);
     if (DEBUG) printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
         kfifo_len(&gih.data_buf));
-    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %ld",  
+    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %lld",  
         dwait);
 
     *offset = dwait;
@@ -378,6 +378,11 @@ static void gih_do_work(struct work_struct * work) {
 
     mutex_lock(&gih.wrt_lock);
 
+    if (gih.dest_filp == NULL) {
+        printk(KERN_ALERT "[gih] filp null\n");
+        return;
+    }
+
     n_out_byte = min((size_t)kfifo_len(&gih.data_buf), gih.write_size);
 
     msleep(gih.sleep_msec);
@@ -449,7 +454,7 @@ static irqreturn_t gih_intr(int irq, void * data) {
         (unsigned int)kfifo_len(&ilog_buf));
 
     /* perhaps also try kernal thread, given the work function in this way */
-    INIT_WORK(&gih.work, gih_do_work);
+    //INIT_WORK(&gih.work, gih_do_work);
     error = queue_work(gih.irq_wq, &gih.work);
 
     if (error) 
@@ -581,8 +586,8 @@ static ssize_t log_read(struct file * filp,
         kfifo_get(device.buffer, &log);
 
         log_len = snprintf(buf, len - 1, 
-            "[ %ld.%ld], Intr cnt: %lu, w.sz: %zd\n", 
-            (long)log.time.tv_sec, (long)log.time.tv_usec,
+            "[ %ld.%ld], Intr cnt: %lu, w.sz: %zu\n", 
+            log.time.tv_sec, log.time.tv_usec,
             log.irq_count, log.byte_sent);
 
         if (log_len < 0) return log_len;
@@ -625,7 +630,6 @@ static int __init gih_init(void) {
 
     INIT_KFIFO(data_buf);
     gih.data_buf = *(struct kfifo *)&data_buf;
-    gih.work = *(struct work_struct *)&gih_work;
 
     log_devices[INTR_LOG_MINOR].buffer = (struct kfifo *)&ilog_buf;
     log_devices[WQ_N_LOG_MINOR].buffer = (struct kfifo *)&wq_n_buf;
