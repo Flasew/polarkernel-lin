@@ -49,7 +49,7 @@ static struct file* file_open(const char* path, int flags, int rights) {
 
     if(IS_ERR(filp)) {
         err = PTR_ERR(filp);
-        printk(KERN_ALERG "[fio] FILE OPENING FAILED, err code %d\n", err);
+        printk(KERN_ALERT "[fio] FILE OPENING FAILED, err code %d\n", err);
         return NULL;
     }
     return filp;
@@ -145,7 +145,7 @@ static inline int file_write_kfifo(struct file* filp,
     unsigned char data[size];
     
     for (put = 0; put < size; put++)
-        kfifo_put(kfifo_buf, &data[put]);
+        kfifo_get(kfifo_buf, &data[put]);
 
     return file_write(filp, data, size);
 }
