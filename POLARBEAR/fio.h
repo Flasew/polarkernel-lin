@@ -14,6 +14,27 @@
 #ifndef _FIO_H
 #define _FIO_H
 
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static struct file* file_open(const char* path, int flags, int rights) {
     struct file* filp = NULL;
     mm_segment_t oldfs;
@@ -33,6 +54,27 @@ static struct file* file_open(const char* path, int flags, int rights) {
     return filp;
 }
 
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static inline void file_close(struct file* filp) {
     filp_close(filp, NULL);
 }
@@ -53,6 +95,27 @@ static int file_write(struct file* filp,
     return ret;
 }
 
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static inline int file_write_kfifo(struct file* filp, 
                                    struct kfifo * kfifo_buf,  
                                    size_t size) {
@@ -61,6 +124,27 @@ static inline int file_write_kfifo(struct file* filp,
     return file_write(filp, data, size);
 }
 
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static inline int file_sync(struct file* filp) {
     vfs_fsync(filp, 0);
     return 0;

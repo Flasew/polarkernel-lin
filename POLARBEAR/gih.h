@@ -40,7 +40,7 @@ MODULE_LICENSE("Dual BSD/GPL");
 #define GIH_IOC_CONFIG_SLEEP_T  _IOW(GIH_IOC, 2, unsigned int) 
 #define GIH_IOC_CONFIG_WRT_SZ   _IOW(GIH_IOC, 3, size_t) 
 #define GIH_IOC_CONFIG_PATH     _IOW(GIH_IOC, 4, const char *)
-#define GIH_IOC_CONFIG_FINISH   _IO(GIH_IOC, 5)
+#define GIH_IOC_CONFIG_FINISH   _IO (GIH_IOC, 5)
 
 /* individual log, contains a timespec and a irq indntifier */
 struct log {

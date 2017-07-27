@@ -32,7 +32,6 @@
 #include <linux/ktime.h>
 #include <linux/delay.h>
 
-/* #include <asm/atomic64_32.h> */
 #include <asm/uaccess.h>
 #include <asm/segment.h>
 #include <asm/irq.h>
@@ -41,6 +40,7 @@
 #include "gih.h"
 #include "fio.h"
 
+/* see each function's header for more detailed 
 /* gih device */
 static int gih_open(struct inode *, struct file *);
 static int gih_close(struct inode *, struct file *);
@@ -73,6 +73,28 @@ struct file_operations log_fops = {
 
 static log_dev log_devices[3] = { 0 }; /* all the logging device, can be
                                           accessed by their minor number */
+
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static int 
 gih_open(struct inode * inode, struct file * filp) 
 {
@@ -107,6 +129,27 @@ gih_open(struct inode * inode, struct file * filp)
     return error;
 }
 
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static int 
 gih_close(struct inode * inode, struct file * filp) 
 {
@@ -149,6 +192,27 @@ gih_close(struct inode * inode, struct file * filp)
     return copied;
 }
 
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static ssize_t 
 gih_write(struct file * filp, 
           const char __user * buffer, 
@@ -186,6 +250,27 @@ gih_write(struct file * filp,
     return copied;
 }
 
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static long gih_ioctl(struct file * filep, 
                       unsigned int cmd, 
                       unsigned long arg) {
@@ -201,12 +286,6 @@ static long gih_ioctl(struct file * filep,
 
         case GIH_IOC_CONFIG_IRQ:
             gih.irq = (int)arg;
-            error = request_irq(gih.irq, gih_intr, IRQF_SHARED,
-                IRQ_NAME, (void*)&gih);
-                if (error < 0) {
-                    printk(KERN_ALERT "[gih] IRQ REQUEST ERROR: %d\n", error);
-                    return error;
-                }
             break;
 
         case GIH_IOC_CONFIG_SLEEP_T:
@@ -228,6 +307,15 @@ static long gih_ioctl(struct file * filep,
 
         /* make sure to only call this after configuratoin */
         case GIH_IOC_CONFIG_FINISH:
+
+            /* set the irq */
+            error = request_irq(gih.irq, gih_intr, IRQF_SHARED,
+                IRQ_NAME, (void*)&gih);
+            if (error < 0) {
+                printk(KERN_ALERT "[gih] IRQ REQUEST ERROR: %d\n", error);
+                return error;
+            }
+            
             gih.configured = TRUE;
             printk(KERN_ALERT "[gih] configuration finished.\n");
             break;
@@ -238,6 +326,27 @@ static long gih_ioctl(struct file * filep,
     return 0;
 }
 
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static void gih_do_work(struct work_struct * work) {
 
     size_t n_out_byte;            /* number of byte to output */
@@ -265,9 +374,11 @@ static void gih_do_work(struct work_struct * work) {
         atomic64_dec(&gih.data_wait);
     }
 
+    file_sync(gih.dest_filp);
+
     mutex_unlock(&gih.wrt_lock);
 
-    exit.byte_sent = -1,
+    exit.byte_sent = out,
     exit.irq_count = log_devices[WQ_X_LOG_MINOR].irq_count++;
 
     do_gettimeofday(&exit.time);
@@ -277,6 +388,27 @@ static void gih_do_work(struct work_struct * work) {
         printk(KERN_ALERT "[gih] Exiting work queue function...\n");
 }
 
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static irqreturn_t gih_intr(int irq, void * data) {
     /* enque work, write log */
     int error = 0;
@@ -298,6 +430,28 @@ static irqreturn_t gih_intr(int irq, void * data) {
 }
 
 /* log device function definitions */
+
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static int log_open(struct inode * inode, struct file * filp) {
 
     unsigned int minor = iminor(inode);
@@ -312,6 +466,27 @@ static int log_open(struct inode * inode, struct file * filp) {
     return 0;
 }
 
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static int log_close(struct inode * inode, struct file * filp) {
 
     unsigned int minor = iminor(inode);
@@ -324,6 +499,27 @@ static int log_close(struct inode * inode, struct file * filp) {
     return 0;
 }
 
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static ssize_t log_read(struct file * filp, 
                         char __user * buf, 
                         size_t len, 
@@ -368,6 +564,27 @@ static ssize_t log_read(struct file * filp,
     return *offset;
 }
 
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static int __init gih_init(void) {
 
     int error;
@@ -442,6 +659,27 @@ static int __init gih_init(void) {
 
 }
 
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static void __exit gih_exit(void) {
 
     unregister_chrdev_region(gih.dev_num, 1);
