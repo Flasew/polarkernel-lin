@@ -11,8 +11,11 @@
 #include <asm/uaccess.h>
 #include <asm/io.h>
 
+struct wrap = {
+    unsigned char aChar;
+};
 
-DEFINE_KFIFO(echo_buf, unsigned char, 1024);
+static DECLARE_KFIFO(echo_buf, struct wrap, 1024);
 
 static int echo_open(struct inode *, struct file *);
 static int echo_close(struct inode *, struct file *);
@@ -56,21 +59,22 @@ static ssize_t echo_read(struct file * filp,
     int length;
     int cped;
     int last;
-    size_t diff;
 
-    diff = echo.message_length - *offset;
-    length = min(len, diff);
+    length = min(len, echo.message_length);
     kfifo_to_user(&echo.buffer, buffer, length, &cped);
+    printk(KERN_ALERT "length = %d\n", length);
     if (cped != length) {
         printk(KERN_ALERT "partial reading from echo\n");
-        *offset += cped; 
+        *offset -= cped; 
+	echo.message_length -= cped;
         return cped;
     }
     else { 
         *offset += length;
         last = min(len, echo.message_length);
         buffer[last] = '\0';
-        printk(KERN_ALERT "length = %d\n", length);
+	*offset -= length;
+	echo.message_length -= length;
         return length;
     }
 }
@@ -90,12 +94,14 @@ static ssize_t echo_write(struct file * filp,
     kfifo_from_user(&echo.buffer, buffer, length, &cped);
     if (length != cped) {
         printk(KERN_ALERT "part writing to echo\n");
+	*offset += cped;
         return cped;
     }
 
     printk(KERN_ALERT "by return... %d\n",length);
     kfifo_put(&echo.buffer, '\0');
     echo.message_length = length;
+    *offset += length;
     return length;
 }
 
@@ -104,8 +110,9 @@ static int __init echo_init(void) {
     int error = 0;
     static struct cdev cdev;
 
+    INIT_KFIFO(echo_buf);
     echo.cdev = &cdev;
-    echo.buffer = echo_buf;
+    echo.buffer = *(struct kfifo *)&echo_buf;
 
     error = alloc_chrdev_region(&echo.dev, 0, 1, "echo");
     if (error) {

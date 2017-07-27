@@ -40,7 +40,8 @@
 #include "gih.h"
 #include "fio.h"
 
-/* see each function's header for more detailed 
+/* see each function's header for more detailed documentation */
+
 /* gih device */
 static int gih_open(struct inode *, struct file *);
 static int gih_close(struct inode *, struct file *);

@@ -22,6 +22,7 @@
 #include <sys/ioctl.h>
 
 #include <err.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
@@ -40,7 +41,6 @@
 #define GIH_IOC_CONFIG_PATH     _IOW(GIH_IOC, 4, const char *)
 #define GIH_IOC_CONFIG_FINISH   _IO (GIH_IOC, 5)
 
-errno = 0;
 
 /* see the header comments for each function */
 static PyObject * configure_irq     (PyObject *, PyObject *);
