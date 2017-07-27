@@ -59,7 +59,6 @@ struct file_operations gih_fops = {
 };
 
 static gih_dev gih = { 0 };             /* gih device */
-static DECLARE_WORK(gih_work, gih_do_work);
 
 /* log devices */
 static int log_open(struct inode *, struct file *);
@@ -222,6 +221,7 @@ gih_write(struct file * filp,
           loff_t * offset) {
 
     int copied;
+    long long dwait;
     size_t length;
     size_t avail;
 
@@ -232,18 +232,20 @@ gih_write(struct file * filp,
         printk(KERN_ALERT "[gih] Warning: gih buffer is full, "
             "%zu byte loss occured.\n", len - avail);
 
-    *offset = 0;
-
     length = min(len - 1, avail);
     
     kfifo_from_user(&gih.data_buf, buffer, length, &copied);
 
-    atomic64_add(copied, &gih.data_wait);
+    dwait = atomic64_add_return(copied, &gih.data_wait);
     mutex_unlock(&gih.wrt_lock);
 
     if (DEBUG) printk(KERN_ALERT "[gih] %d bytes written to gih.\n", copied);
-    if (DEBUG) printk(KERN_ALERT "[gih] data_buf kfifo length is %d", kfifo_len(&gih.data_buf));
-    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %ld",  atomic64_read(&gih.data_wait));
+    if (DEBUG) printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
+        kfifo_len(&gih.data_buf));
+    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %ld",  
+        dwait);
+
+    *offset = dwait;
 
     return copied;
 }
@@ -284,17 +286,20 @@ static long gih_ioctl(struct file * filep,
 
         case GIH_IOC_CONFIG_IRQ:
             gih.irq = (int)arg;
-            if (DEBUG) printk(KERN_ALERT "[gih] irq configured to %d\n", gih.irq);
+            if (DEBUG) printk(KERN_ALERT "[gih] irq configured to %d\n", 
+                gih.irq);
             break;
 
         case GIH_IOC_CONFIG_SLEEP_T:
             gih.sleep_msec = (unsigned int)arg;
-            if (DEBUG) printk(KERN_ALERT "[gih] sleep time configured to %u\n", gih.sleep_msec);
+            if (DEBUG) printk(KERN_ALERT "[gih] sleep time configured to %u\n", 
+                gih.sleep_msec);
             break;
 
         case GIH_IOC_CONFIG_WRT_SZ:
             gih.write_size = (size_t)arg;
-            if (DEBUG) printk(KERN_ALERT "[gih] write size configured to %zu\n", gih.write_size);
+            if (DEBUG) printk(KERN_ALERT "[gih] write size configured to %zu\n",
+                gih.write_size);
             break;
 
         case GIH_IOC_CONFIG_PATH:
@@ -303,8 +308,8 @@ static long gih_ioctl(struct file * filep,
                 return -EINVAL;
             strncpy(gih.path, (const char *)arg, length);
             gih.path[length] = '\0';
-            if (DEBUG) printk(KERN_ALERT "[gih] path configured to %s\n", gih.path);
-
+            if (DEBUG) printk(KERN_ALERT "[gih] path configured to %s\n", 
+                gih.path);
             gih.dest_filp = file_open(gih.path, O_WRONLY, S_IRWXUGO);
             if (DEBUG) printk(KERN_ALERT "[gih] file opened successfully: %d", 
                 gih.dest_filp != NULL);
@@ -363,12 +368,13 @@ static void gih_do_work(struct work_struct * work) {
     entry.byte_sent = -1,
     entry.irq_count = log_devices[WQ_N_LOG_MINOR].irq_count++;
 
-    if (DEBUG)
-        printk(KERN_ALERT "[gih] Entering work queue function...\n");
+    if (DEBUG) printk(KERN_ALERT "[gih] Entering work queue function...\n");
 
     do_gettimeofday(&entry.time);
     kfifo_put(&wq_n_buf, entry);
-    if (DEBUG) printk(KERN_ALERT "[log] WQN element num %u\n", (unsigned int)kfifo_len(&wq_n_buf));
+
+    if (DEBUG) printk(KERN_ALERT "[log] WQN element num %u\n", 
+        (unsigned int)kfifo_len(&wq_n_buf));
 
     mutex_lock(&gih.wrt_lock);
 
@@ -380,8 +386,12 @@ static void gih_do_work(struct work_struct * work) {
     atomic64_sub(out, &gih.data_wait);
 
     if (DEBUG) printk(KERN_ALERT "[gih] %zu bytes read from gih.\n", out);
-    if (DEBUG) printk(KERN_ALERT "[gih] data_buf kfifo length is %d", kfifo_len(&gih.data_buf));
-    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %ld",  atomic64_read(&gih.data_wait));
+
+    if (DEBUG) printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
+        kfifo_len(&gih.data_buf));
+
+    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %ld",  
+        atomic64_read(&gih.data_wait));
 
     file_sync(gih.dest_filp);
 
@@ -390,11 +400,14 @@ static void gih_do_work(struct work_struct * work) {
     exit.byte_sent = out;
     exit.irq_count = log_devices[WQ_X_LOG_MINOR].irq_count++;
 
-    if (DEBUG) printk(KERN_ALERT "[gih] %zu bytes written out to dest file.\n", out);
+    if (DEBUG) printk(KERN_ALERT "[gih] %zu bytes written out to dest file.\n", 
+                out);
 
     do_gettimeofday(&exit.time);
     kfifo_put(&wq_x_buf, exit);
-    if (DEBUG) printk(KERN_ALERT "[log] WQX element num %u\n", (unsigned int)kfifo_len(&wq_x_buf));
+
+    if (DEBUG) printk(KERN_ALERT "[log] WQX element num %u\n", 
+        (unsigned int)kfifo_len(&wq_x_buf));
 
     if (DEBUG)
         printk(KERN_ALERT "[gih] Exiting work queue function...\n");
@@ -431,9 +444,12 @@ static irqreturn_t gih_intr(int irq, void * data) {
 
     do_gettimeofday(&intr_log.time);
     kfifo_put(&ilog_buf, intr_log);
-    if (DEBUG) printk(KERN_ALERT "[log] INT element num %u\n", (unsigned int)kfifo_len(&ilog_buf));
+
+    if (DEBUG) printk(KERN_ALERT "[log] INT element num %u\n", 
+        (unsigned int)kfifo_len(&ilog_buf));
 
     /* perhaps also try kernal thread, given the work function in this way */
+    INIT_WORK(&gih.work, gih_do_work);
     error = queue_work(gih.irq_wq, &gih.work);
 
     if (error) 
@@ -549,7 +565,7 @@ static ssize_t log_read(struct file * filp,
     if (*offset != 0) {return 0;}
 
     device = *(log_dev*)filp->private_data;
-    amount_log = kfifo_len(&device.buffer);
+    amount_log = kfifo_len(device.buffer);
 
     if (DEBUG) printk(KERN_ALERT "[log] Reading from log device %d, "
             "with %zu entries.\n", MINOR(device.dev_num), amount_log);
@@ -562,7 +578,7 @@ static ssize_t log_read(struct file * filp,
          finished_log < amount_log && len > 0; 
          finished_log++) {
 
-        kfifo_get(&device.buffer, &log);
+        kfifo_get(device.buffer, &log);
 
         log_len = snprintf(buf, len - 1, 
             "[ %ld.%ld], Intr cnt: %lu, w.sz: %zd\n", 
@@ -611,9 +627,9 @@ static int __init gih_init(void) {
     gih.data_buf = *(struct kfifo *)&data_buf;
     gih.work = *(struct work_struct *)&gih_work;
 
-    log_devices[INTR_LOG_MINOR].buffer = *(struct kfifo *)&ilog_buf;
-    log_devices[WQ_N_LOG_MINOR].buffer = *(struct kfifo *)&wq_n_buf;
-    log_devices[WQ_X_LOG_MINOR].buffer = *(struct kfifo *)&wq_x_buf;
+    log_devices[INTR_LOG_MINOR].buffer = (struct kfifo *)&ilog_buf;
+    log_devices[WQ_N_LOG_MINOR].buffer = (struct kfifo *)&wq_n_buf;
+    log_devices[WQ_X_LOG_MINOR].buffer = (struct kfifo *)&wq_x_buf;
 
     /* allocate Maj/Min for gih */
     error = alloc_chrdev_region(&gih.dev_num, 0, 1, GIH_DEV);

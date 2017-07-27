@@ -63,8 +63,8 @@ typedef struct log_dev {
                                        devices they reperesent number of 
                                        not missed irq */
     dev_t dev_num;                  /* device number */
+    struct kfifo * buffer;          /* FIFO buffer */
     struct mutex dev_open;          /* device can only open once a time*/
-    struct kfifo buffer;            /* FIFO buffer */
 } log_dev;
 
 /* gih device structure */
