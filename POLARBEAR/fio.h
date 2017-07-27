@@ -49,6 +49,7 @@ static struct file* file_open(const char* path, int flags, int rights) {
 
     if(IS_ERR(filp)) {
         err = PTR_ERR(filp);
+        printk(KERN_ALERG "[fio] FILE OPENING FAILED, err code %d\n", err);
         return NULL;
     }
     return filp;
@@ -79,6 +80,27 @@ static inline void file_close(struct file* filp) {
     filp_close(filp, NULL);
 }
 
+/*
+ * Function name: 
+ * 
+ * Function prototype:
+ *     
+ *     
+ * Description: 
+ *     
+ *     
+ * Arguments:
+ *     @
+ *     
+ * Side Effects:
+ *     
+ *     
+ * Error Condition: 
+ *     
+ *     
+ * Return: 
+ *     
+ */
 static int file_write(struct file* filp, 
                       unsigned char* data, 
                       size_t size) {
@@ -119,8 +141,12 @@ static int file_write(struct file* filp,
 static inline int file_write_kfifo(struct file* filp, 
                                    struct kfifo * kfifo_buf,  
                                    size_t size) {
+    size_t put;
     unsigned char data[size];
-    kfifo_out(kfifo_buf, data, size);
+    
+    for (put = 0; put < size; put++)
+        kfifo_put(kfifo_buf, &data[put]);
+
     return file_write(filp, data, size);
 }
 

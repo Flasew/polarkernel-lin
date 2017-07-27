@@ -17,6 +17,9 @@ MODULE_LICENSE("Dual BSD/GPL");
 
 #define DEBUG 1
 
+#define DEBUG_LOG(mes) if (DEBUG)   printk(KERN_ALERT mes )
+#define
+
 /* device names */
 #define GIH_DEV     "gih"           /* device that accepts user input */
 #define LOG_DEV     "gihlog"        /* logging device for interrupt happen */
