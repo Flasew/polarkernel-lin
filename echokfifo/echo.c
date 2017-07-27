@@ -11,11 +11,7 @@
 #include <asm/uaccess.h>
 #include <asm/io.h>
 
-struct wrap = {
-    unsigned char aChar;
-};
-
-static DECLARE_KFIFO(echo_buf, struct wrap, 1024);
+static DECLARE_KFIFO(echo_buf, unsigned char, 1024);
 
 static int echo_open(struct inode *, struct file *);
 static int echo_close(struct inode *, struct file *);
@@ -99,7 +95,7 @@ static ssize_t echo_write(struct file * filp,
     }
 
     printk(KERN_ALERT "by return... %d\n",length);
-    kfifo_put(&echo.buffer, '\0');
+    // kfifo_put(&echo.buffer, '\0');
     echo.message_length = length;
     *offset += length;
     return length;
