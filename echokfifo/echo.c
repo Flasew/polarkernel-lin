@@ -90,7 +90,7 @@ static ssize_t echo_write(struct file * filp,
     kfifo_from_user(&echo.buffer, buffer, length, &cped);
     if (length != cped) {
         printk(KERN_ALERT "part writing to echo\n");
-	*offset += cped;
+        *offset += cped;
         return cped;
     }
 
