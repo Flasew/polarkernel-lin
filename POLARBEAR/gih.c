@@ -25,7 +25,6 @@
 #include <linux/types.h>
 #include <linux/slab.h>
 #include <linux/cdev.h> 
-#include <linux/atomic.h>
 #include <linux/string.h>
 #include <linux/buffer_head.h>
 #include <linux/fcntl.h>
@@ -105,8 +104,8 @@ gih_open(struct inode * inode, struct file * filp)
     
     printk(KERN_ALERT "[gih] Openining gih device...\n");
 
-    atomic64_set(&gih.data_wait, 0);
-    gih.irq_wq = create_singlethread_workqueue(IRQ_WQ_NAME);
+    gih.data_wait = 0;
+    gih.irq_wq = create_workqueue(IRQ_WQ_NAME);
     kfifo_reset(&gih.data_buf);
     INIT_WORK(&gih.work, gih_do_work);
 
@@ -155,7 +154,7 @@ static int
 gih_close(struct inode * inode, struct file * filp) 
 {
     int copied = 0;
-    long long dwait;
+    size_t dwait;
 
     printk(KERN_ALERT "[gih] Releasing gih device...\n");
 
@@ -170,7 +169,7 @@ gih_close(struct inode * inode, struct file * filp)
     flush_workqueue(gih.irq_wq);
     destroy_workqueue(gih.irq_wq);
     /* this would result as dumping all unsent data, skipping the intr */
-    dwait = atomic64_read(&gih.data_wait);
+    dwait = gih.data_wait;
     copied = file_write_kfifo(gih.dest_filp, &gih.data_buf, dwait);
     if  (copied != dwait) {
         if  (copied < 0) {
@@ -179,7 +178,7 @@ gih_close(struct inode * inode, struct file * filp)
         } 
         else {
             printk(KERN_ALERT 
-                "[gih] WARNING: data lose occured, %lld bytes lost\n", 
+                "[gih] WARNING: data lose occured, %zu bytes lost\n", 
                 dwait - copied);
         }
     } 
@@ -221,7 +220,7 @@ gih_write(struct file * filp,
           loff_t * offset) {
 
     int copied;
-    long long dwait;
+    size_t dwait;
     size_t length;
     size_t avail;
 
@@ -236,13 +235,13 @@ gih_write(struct file * filp,
     
     kfifo_from_user(&gih.data_buf, buffer, length, &copied);
 
-    dwait = atomic64_add_return(copied, &gih.data_wait);
+    dwait = gih.data_wait;
     mutex_unlock(&gih.wrt_lock);
 
     if (DEBUG) printk(KERN_ALERT "[gih] %d bytes written to gih.\n", copied);
     if (DEBUG) printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
         kfifo_len(&gih.data_buf));
-    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %lld",  
+    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %zu",  
         dwait);
 
     *offset = dwait;
@@ -371,32 +370,26 @@ static void gih_do_work(struct work_struct * work) {
     if (DEBUG) printk(KERN_ALERT "[gih] Entering work queue function...\n");
 
     do_gettimeofday(&entry.time);
-    kfifo_put(&wq_n_buf, entry);
+    kfifo_in(&wq_n_buf, &entry, 1);
 
     if (DEBUG) printk(KERN_ALERT "[log] WQN element num %u\n", 
         (unsigned int)kfifo_len(&wq_n_buf));
 
     mutex_lock(&gih.wrt_lock);
 
-    if (gih.dest_filp == NULL) {
-        printk(KERN_ALERT "[gih] filp null\n");
-        return;
-    }
-
     n_out_byte = min((size_t)kfifo_len(&gih.data_buf), gih.write_size);
 
     msleep(gih.sleep_msec);
 
     out = file_write_kfifo(gih.dest_filp, &gih.data_buf, n_out_byte);
-    atomic64_sub(out, &gih.data_wait);
+    gih.data_wait -= out;
 
     if (DEBUG) printk(KERN_ALERT "[gih] %zu bytes read from gih.\n", out);
 
     if (DEBUG) printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
         kfifo_len(&gih.data_buf));
 
-    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %ld",  
-        atomic64_read(&gih.data_wait));
+    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %zu", gih.data_wait);
 
     file_sync(gih.dest_filp);
 
@@ -409,7 +402,7 @@ static void gih_do_work(struct work_struct * work) {
                 out);
 
     do_gettimeofday(&exit.time);
-    kfifo_put(&wq_x_buf, exit);
+    kfifo_in(&wq_x_buf, &exit, 1);
 
     if (DEBUG) printk(KERN_ALERT "[log] WQX element num %u\n", 
         (unsigned int)kfifo_len(&wq_x_buf));
@@ -448,7 +441,7 @@ static irqreturn_t gih_intr(int irq, void * data) {
     intr_log.irq_count = log_devices[INTR_LOG_MINOR].irq_count++;
 
     do_gettimeofday(&intr_log.time);
-    kfifo_put(&ilog_buf, intr_log);
+    kfifo_in(&ilog_buf, &intr_log, 1);
 
     if (DEBUG) printk(KERN_ALERT "[log] INT element num %u\n", 
         (unsigned int)kfifo_len(&ilog_buf));
@@ -583,10 +576,20 @@ static ssize_t log_read(struct file * filp,
          finished_log < amount_log && len > 0; 
          finished_log++) {
 
-        kfifo_get(device.buffer, &log);
+        kfifo_out(device.buffer, &log, 1);
+
+        if (DEBUG) {
+            printk(KERN_ALERT "[log] out: bsent %zd, "
+                "ict %lu, time s %ld, time ms %ld\n",
+                *(ssize_t*)&log,
+                *(unsigned long*)((void*)&log+sizeof(ssize_t)),
+                *(long*)((void*)&log+sizeof(ssize_t)+sizeof(unsigned long)),
+                *(long*)((void*)&log+sizeof(ssize_t)+sizeof(unsigned long)+
+                    sizeof(long)));
+        }
 
         log_len = snprintf(buf, len - 1, 
-            "[ %ld.%ld], Intr cnt: %lu, w.sz: %zu\n", 
+            "[ %ld.%ld], Intr cnt: %lu, w.sz: %zd\n", 
             log.time.tv_sec, log.time.tv_usec,
             log.irq_count, log.byte_sent);
 

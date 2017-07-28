@@ -15,7 +15,7 @@ MODULE_LICENSE("Dual BSD/GPL");
 #define TRUE 1
 #define FALSE 0
 
-#define DEBUG 1
+#define DEBUG 0
 
 /* device names */
 #define GIH_DEV     "gih"           /* device that accepts user input */
@@ -76,11 +76,11 @@ DECLARE_KFIFO(data_buf, unsigned char, DATA_FIFO_SZ);
 #define PATH_MAX_LEN 128            /* Just a file name... should be enough */
 
 typedef struct gih_dev {
+    bool configured;                        /* device conf status */
     int irq;                                /* irq line to be catched */
     unsigned int sleep_msec;                /* time to sleep */
     size_t write_size;                      /* how much to write each time */
-    bool configured;                        /* device conf status */
-    atomic64_t data_wait;                   /* number of data on wait */
+    size_t data_wait;                       /* number of data on wait */
     dev_t dev_num;                          /* device number */
     struct workqueue_struct * irq_wq;       /* work queue */
     struct file * dest_filp;                /* destination file pointer */
