@@ -15,11 +15,12 @@ MODULE_LICENSE("Dual BSD/GPL");
 #define TRUE 1
 #define FALSE 0
 
-#define DEBUG 0
+#define DEBUG 1
 
 /* device names */
-#define GIH_DEV     "gih"           /* device that accepts user input */
-#define LOG_DEV     "gihlog"        /* logging device for interrupt happen */
+#define GIH_DEV         "gih"       /* device that accepts user input */
+#define LOG_DEV         "gihlog"    /* logging device for interrupt happen */
+#define LOG_DEV_FMT     "gihlog%d"  /* formatted version */
 
 /* minor number for all logging devices */
 #define INTR_LOG_MINOR 0
@@ -64,6 +65,8 @@ typedef struct log_dev {
                                        not missed irq */
     dev_t dev_num;                  /* device number */
     struct kfifo * buffer;          /* FIFO buffer */
+    struct class * log_class;       /* for sysfs, log class */
+    struct device * log_device;     /* for sysfs, log device */
     struct mutex dev_open;          /* device can only open once a time*/
 } log_dev;
 
@@ -80,10 +83,12 @@ typedef struct gih_dev {
     int irq;                                /* irq line to be catched */
     unsigned int sleep_msec;                /* time to sleep */
     size_t write_size;                      /* how much to write each time */
-    size_t data_wait;                       /* number of data on wait */
+    atomic_t data_wait;                     /* number of data on wait */
     dev_t dev_num;                          /* device number */
     struct workqueue_struct * irq_wq;       /* work queue */
     struct file * dest_filp;                /* destination file pointer */
+    struct class * gih_class;               /* for sysfs, class */
+    struct device * gih_device;             /* for sysfs, device */
     struct work_struct work;                /* work to be put in the queue */
     struct mutex dev_open;                  /* dev can only be opening once */
     struct mutex wrt_lock;                  /* mutex to protect write to file */

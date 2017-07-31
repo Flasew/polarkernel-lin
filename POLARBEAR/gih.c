@@ -30,6 +30,8 @@
 #include <linux/fcntl.h>
 #include <linux/ktime.h>
 #include <linux/delay.h>
+#include <linux/sysfs.h>
+#include <linux/device.h>
 
 #include <asm/uaccess.h>
 #include <asm/segment.h>
@@ -104,7 +106,7 @@ gih_open(struct inode * inode, struct file * filp)
     
     printk(KERN_ALERT "[gih] Openining gih device...\n");
 
-    gih.data_wait = 0;
+    atomic_set(&gih.data_wait, 0);
     gih.irq_wq = create_workqueue(IRQ_WQ_NAME);
     kfifo_reset(&gih.data_buf);
     INIT_WORK(&gih.work, gih_do_work);
@@ -169,7 +171,7 @@ gih_close(struct inode * inode, struct file * filp)
     flush_workqueue(gih.irq_wq);
     destroy_workqueue(gih.irq_wq);
     /* this would result as dumping all unsent data, skipping the intr */
-    dwait = gih.data_wait;
+    dwait = atomic_read(&gih.data_wait);
     copied = file_write_kfifo(gih.dest_filp, &gih.data_buf, dwait);
     if  (copied != dwait) {
         if  (copied < 0) {
@@ -220,7 +222,6 @@ gih_write(struct file * filp,
           loff_t * offset) {
 
     int copied;
-    size_t dwait;
     size_t length;
     size_t avail;
 
@@ -235,16 +236,13 @@ gih_write(struct file * filp,
     
     kfifo_from_user(&gih.data_buf, buffer, length, &copied);
 
-    dwait = gih.data_wait;
+    *offset = atomic_read(&gih.data_wait);
     mutex_unlock(&gih.wrt_lock);
 
     if (DEBUG) printk(KERN_ALERT "[gih] %d bytes written to gih.\n", copied);
     if (DEBUG) printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
         kfifo_len(&gih.data_buf));
-    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %zu",  
-        dwait);
-
-    *offset = dwait;
+    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %lld", *offset);
 
     return copied;
 }
@@ -382,14 +380,15 @@ static void gih_do_work(struct work_struct * work) {
     msleep(gih.sleep_msec);
 
     out = file_write_kfifo(gih.dest_filp, &gih.data_buf, n_out_byte);
-    gih.data_wait -= out;
+    atomic_sub(out, &gih.data_wait);
 
     if (DEBUG) printk(KERN_ALERT "[gih] %zu bytes read from gih.\n", out);
 
     if (DEBUG) printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
         kfifo_len(&gih.data_buf));
 
-    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %zu", gih.data_wait);
+    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %d", 
+            atomic_read(&gih.data_wait));
 
     file_sync(gih.dest_filp);
 
@@ -672,6 +671,37 @@ static int __init gih_init(void) {
         return error;
     }
 
+    /* create device nodes */
+    gih.gih_class = class_create(THIS_MODULE, GIH_DEV);
+    gih.gih_device = device_create(gih.gih_class, NULL, 
+        gih.dev_num, &gih, GIH_DEV);
+
+    log_devices[INTR_LOG_MINOR].log_class = class_create(THIS_MODULE, LOG_DEV);
+    log_devices[WQ_N_LOG_MINOR].log_class = 
+    log_devices[WQ_X_LOG_MINOR].log_class =
+        log_devices[INTR_LOG_MINOR].log_class;
+
+    log_devices[INTR_LOG_MINOR].log_device = 
+        device_create(log_devices[INTR_LOG_MINOR].log_class, 
+                gih.gih_device,
+                log_devices[INTR_LOG_MINOR].dev_num, 
+                &log_devices[INTR_LOG_MINOR],
+                LOG_DEV_FMT, INTR_LOG_MINOR);
+
+    log_devices[WQ_N_LOG_MINOR].log_device = 
+        device_create(log_devices[WQ_N_LOG_MINOR].log_class, 
+                gih.gih_device,
+                log_devices[WQ_N_LOG_MINOR].dev_num, 
+                &log_devices[WQ_N_LOG_MINOR],
+                LOG_DEV_FMT, WQ_N_LOG_MINOR);
+
+     log_devices[WQ_X_LOG_MINOR].log_device = 
+        device_create(log_devices[WQ_X_LOG_MINOR].log_class, 
+                gih.gih_device,
+                log_devices[WQ_X_LOG_MINOR].dev_num, 
+                &log_devices[WQ_X_LOG_MINOR],
+                LOG_DEV_FMT, WQ_X_LOG_MINOR);
+
     mutex_init(&gih.dev_open);
     mutex_init(&gih.wrt_lock);
     mutex_init(&log_devices[INTR_LOG_MINOR].dev_open);
@@ -717,6 +747,17 @@ static int __init gih_init(void) {
  *     
  */
 static void __exit gih_exit(void) {
+
+    device_destroy(log_devices[INTR_LOG_MINOR].log_class,
+            log_devices[INTR_LOG_MINOR].dev_num);
+    device_destroy(log_devices[WQ_N_LOG_MINOR].log_class,
+            log_devices[WQ_N_LOG_MINOR].dev_num);
+    device_destroy(log_devices[WQ_X_LOG_MINOR].log_class,
+            log_devices[WQ_X_LOG_MINOR].dev_num);
+    class_destroy(log_devices[INTR_LOG_MINOR].log_class);
+
+    device_destroy(gih.gih_class, gih.dev_num);
+    class_destroy(gih.gih_class);
 
     unregister_chrdev_region(gih.dev_num, 1);
     unregister_chrdev_region(log_devices[INTR_LOG_MINOR].dev_num, 3);
