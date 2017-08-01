@@ -1,5 +1,7 @@
 *.o
 *.ko
+*.so
+*.pyc
 *.swp
 *.cmd
 *.mod*

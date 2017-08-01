@@ -362,13 +362,10 @@ static void gih_do_work(struct work_struct * work) {
     struct log exit;
     struct log entry;
 
-    entry.byte_sent = -1,
-    entry.irq_count = log_devices[WQ_N_LOG_MINOR].irq_count++;
 
     if (DEBUG) printk(KERN_ALERT "[gih] Entering work queue function...\n");
 
     do_gettimeofday(&entry.time);
-    kfifo_in(&wq_n_buf, &entry, 1);
 
     if (DEBUG) printk(KERN_ALERT "[log] WQN element num %u\n", 
         (unsigned int)kfifo_len(&wq_n_buf));
@@ -377,9 +374,11 @@ static void gih_do_work(struct work_struct * work) {
 
     n_out_byte = min((size_t)kfifo_len(&gih.data_buf), gih.write_size);
 
-    msleep(gih.sleep_msec);
 
+    if (DEBUG) printk(KERN_ALERT "[gih] calling write\n");
     out = file_write_kfifo(gih.dest_filp, &gih.data_buf, n_out_byte);
+    if (DEBUG) printk(KERN_ALERT "[gih] finished write\n");
+
     atomic_sub(out, &gih.data_wait);
 
     if (DEBUG) printk(KERN_ALERT "[gih] %zu bytes read from gih.\n", out);
@@ -393,6 +392,10 @@ static void gih_do_work(struct work_struct * work) {
     file_sync(gih.dest_filp);
 
     mutex_unlock(&gih.wrt_lock);
+
+    entry.byte_sent = -1,
+    entry.irq_count = log_devices[WQ_N_LOG_MINOR].irq_count++;
+    kfifo_in(&wq_n_buf, &entry, 1);
 
     exit.byte_sent = out;
     exit.irq_count = log_devices[WQ_X_LOG_MINOR].irq_count++;
