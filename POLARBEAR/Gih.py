@@ -71,7 +71,8 @@ class Gih(object):
         cmd = 'insmod {:s}'.format(modPath)
         print('Running shell command: \"{:s}\" ...'.format(cmd))
 
-        if (retcode = subprocess.call(cmd, shell=True)) == 0:
+        retcode = subprocess.call(cmd, shell=True)
+        if retcode == 0:
             __isLoaded = True
             __modPath  = modPath
             return True
@@ -97,7 +98,8 @@ class Gih(object):
         cmd = 'rmmod gih'
         print('Running shell command: \"{:s}\" ...'.format(cmd))
 
-        if (retcode = subprocess.call(cmd, shell=True)) == 0:
+        retcode = subprocess.call(cmd, shell=True)
+        if retcode == 0:
             __isLoaded = False
             return True
         else:
