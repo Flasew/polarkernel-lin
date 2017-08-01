@@ -228,6 +228,7 @@ gih_write(struct file * filp,
     if (DEBUG) printk(KERN_ALERT "[gih] Entering write function...\n");
 
     mutex_lock(&gih.wrt_lock);
+
     if ((avail = kfifo_avail(&gih.data_buf)) < len - 1) 
         printk(KERN_ALERT "[gih] Warning: gih buffer is full, "
             "%zu byte loss occured.\n", len - avail);
@@ -237,12 +238,15 @@ gih_write(struct file * filp,
     kfifo_from_user(&gih.data_buf, buffer, length, &copied);
 
     *offset = atomic_read(&gih.data_wait);
+
     mutex_unlock(&gih.wrt_lock);
 
-    if (DEBUG) printk(KERN_ALERT "[gih] %d bytes written to gih.\n", copied);
-    if (DEBUG) printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
-        kfifo_len(&gih.data_buf));
-    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %lld", *offset);
+    if (DEBUG) {
+        printk(KERN_ALERT "[gih] %d bytes written to gih.\n", copied);
+        printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
+            kfifo_len(&gih.data_buf));
+        printk(KERN_ALERT "[gih] data_wait is %lld", *offset);
+    }
 
     return copied;
 }
@@ -362,18 +366,15 @@ static void gih_do_work(struct work_struct * work) {
     struct log exit;
     struct log entry;
 
-
     if (DEBUG) printk(KERN_ALERT "[gih] Entering work queue function...\n");
 
     do_gettimeofday(&entry.time);
-
-    if (DEBUG) printk(KERN_ALERT "[log] WQN element num %u\n", 
-        (unsigned int)kfifo_len(&wq_n_buf));
 
     mutex_lock(&gih.wrt_lock);
 
     n_out_byte = min((size_t)kfifo_len(&gih.data_buf), gih.write_size);
 
+    mdelay(gih.sleep_msec);
 
     if (DEBUG) printk(KERN_ALERT "[gih] calling write\n");
     out = file_write_kfifo(gih.dest_filp, &gih.data_buf, n_out_byte);
@@ -381,36 +382,37 @@ static void gih_do_work(struct work_struct * work) {
 
     atomic_sub(out, &gih.data_wait);
 
-    if (DEBUG) printk(KERN_ALERT "[gih] %zu bytes read from gih.\n", out);
-
-    if (DEBUG) printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
-        kfifo_len(&gih.data_buf));
-
-    if (DEBUG) printk(KERN_ALERT "[gih] data_wait is %d", 
-            atomic_read(&gih.data_wait));
+    if (DEBUG) {
+        printk(KERN_ALERT "[gih] %zu bytes read from gih.\n", out);
+        printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
+            kfifo_len(&gih.data_buf));
+        printk(KERN_ALERT "[gih] data_wait is %d", atomic_read(&gih.data_wait));
+    }
 
     file_sync(gih.dest_filp);
 
     mutex_unlock(&gih.wrt_lock);
 
+    if (DEBUG) 
+        printk(KERN_ALERT "[gih] %zu bytes written out to dest file.\n", out);
+
     entry.byte_sent = -1,
     entry.irq_count = log_devices[WQ_N_LOG_MINOR].irq_count++;
     kfifo_in(&wq_n_buf, &entry, 1);
 
+    if (DEBUG) printk(KERN_ALERT "[log] WQN element num %u\n", 
+        (unsigned int)kfifo_len(&wq_n_buf));
+
     exit.byte_sent = out;
     exit.irq_count = log_devices[WQ_X_LOG_MINOR].irq_count++;
-
-    if (DEBUG) printk(KERN_ALERT "[gih] %zu bytes written out to dest file.\n", 
-                out);
-
+    
     do_gettimeofday(&exit.time);
     kfifo_in(&wq_x_buf, &exit, 1);
 
     if (DEBUG) printk(KERN_ALERT "[log] WQX element num %u\n", 
         (unsigned int)kfifo_len(&wq_x_buf));
 
-    if (DEBUG)
-        printk(KERN_ALERT "[gih] Exiting work queue function...\n");
+    if (DEBUG) printk(KERN_ALERT "[gih] Exiting work queue function...\n");
 }
 
 /*
@@ -436,24 +438,23 @@ static void gih_do_work(struct work_struct * work) {
  */
 static irqreturn_t gih_intr(int irq, void * data) {
     /* enque work, write log */
-    int error = 0;
     struct log intr_log; 
+
+    if (DEBUG) printk(KERN_ALERT "[gih] INTERRUPT CAUGHT.\n")
+
+    do_gettimeofday(&intr_log.time);
+
+    queue_work(gih.irq_wq, &gih.work);
 
     intr_log.byte_sent = -1; 
     intr_log.irq_count = log_devices[INTR_LOG_MINOR].irq_count++;
 
-    do_gettimeofday(&intr_log.time);
     kfifo_in(&ilog_buf, &intr_log, 1);
 
-    if (DEBUG) printk(KERN_ALERT "[log] INT element num %u\n", 
+    if (DEBUG) printk(KERN_ALERT "[log] Falling out: INT element num %u\n", 
         (unsigned int)kfifo_len(&ilog_buf));
 
     /* perhaps also try kernal thread, given the work function in this way */
-    //INIT_WORK(&gih.work, gih_do_work);
-    error = queue_work(gih.irq_wq, &gih.work);
-
-    if (error) 
-        printk(KERN_ALERT "[gih] WARNING: interrupt missed\n");
 
     return IRQ_HANDLED;
 }
@@ -490,8 +491,8 @@ static int log_open(struct inode * inode, struct file * filp) {
     filp->private_data = &log_devices[minor];
     filp->f_pos = 0;
 
-    if (DEBUG)
-        printk(KERN_ALERT "[log] Log device %u opened\n", minor);
+    if (DEBUG) printk(KERN_ALERT "[log] Log device %u opened\n", minor);
+
     return 0;
 }
 
@@ -523,8 +524,7 @@ static int log_close(struct inode * inode, struct file * filp) {
 
     filp->private_data = NULL;
 
-    if (DEBUG)
-        printk(KERN_ALERT "[log] Log device %u released\n", minor);
+    if (DEBUG) printk(KERN_ALERT "[log] Log device %u released\n", minor);
     return 0;
 }
 
@@ -580,18 +580,18 @@ static ssize_t log_read(struct file * filp,
 
         kfifo_out(device.buffer, &log, 1);
 
-        if (DEBUG) {
-            printk(KERN_ALERT "[log] out: bsent %zd, "
-                "ict %lu, time s %ld, time ms %ld\n",
-                *(ssize_t*)&log,
-                *(unsigned long*)((void*)&log+sizeof(ssize_t)),
-                *(long*)((void*)&log+sizeof(ssize_t)+sizeof(unsigned long)),
-                *(long*)((void*)&log+sizeof(ssize_t)+sizeof(unsigned long)+
-                    sizeof(long)));
-        }
+        // if (DEBUG) {
+        //     printk(KERN_ALERT "[log] out: bsent %zd, "
+        //         "ict %lu, time s %ld, time ms %ld\n",
+        //         *(ssize_t*)&log,
+        //         *(unsigned long*)((void*)&log+sizeof(ssize_t)),
+        //         *(long*)(&log+sizeof(ssize_t)+sizeof(unsigned long)),
+        //         *(long*)(&log+sizeof(ssize_t)+sizeof(unsigned long)+ 
+        //             sizeof(long)));
+        // }
 
         log_len = snprintf(buf, len - 1, 
-            "[ %ld.%ld], Intr cnt: %lu, w.sz: %zd\n", 
+            "[%010ld.%06ld] interrupt count: %lu | write size: %zd\n", 
             log.time.tv_sec, log.time.tv_usec,
             log.irq_count, log.byte_sent);
 
@@ -711,9 +711,9 @@ static int __init gih_init(void) {
     mutex_init(&log_devices[WQ_N_LOG_MINOR].dev_open);
     mutex_init(&log_devices[WQ_X_LOG_MINOR].dev_open);
 
-    if (DEBUG) {
-        printk(KERN_ALERT "[gih] [log] gih module loaded.\n");
+    printk(KERN_ALERT "[gih] [log] gih module loaded.\n");
 
+    if (DEBUG) {
         printk(KERN_ALERT "[gih] GIH: Major: %d, Minor: %d\n",
                 gih_major, MINOR(gih.dev_num));
         printk(KERN_ALERT "[log] Intr log: Major: %d, Minor: %d\n", 
@@ -774,8 +774,7 @@ static void __exit gih_exit(void) {
     mutex_destroy(&log_devices[WQ_N_LOG_MINOR].dev_open);
     mutex_destroy(&log_devices[WQ_X_LOG_MINOR].dev_open);
 
-    if (DEBUG)
-        printk(KERN_ALERT "[gih] [log] gih module unloaded.\n");
+    printk(KERN_ALERT "[gih] [log] gih module unloaded.\n");
 }
 
 module_init(gih_init);

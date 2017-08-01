@@ -35,8 +35,8 @@
  * Return: 
  *     
  */
-static struct file* file_open(const char* path, int flags, int rights) {
-    struct file* filp = NULL;
+static struct file * file_open(const char* path, int flags, int rights) {
+    struct file * filp = NULL;
     mm_segment_t oldfs;
     int err = 0;
 
@@ -76,7 +76,7 @@ static struct file* file_open(const char* path, int flags, int rights) {
  * Return: 
  *     
  */
-static inline void file_close(struct file* filp) {
+static inline void file_close(struct file * filp) {
     filp_close(filp, NULL);
 }
 
@@ -101,8 +101,8 @@ static inline void file_close(struct file* filp) {
  * Return: 
  *     
  */
-static int file_write(struct file* filp, 
-                      unsigned char* data, 
+static int file_write(struct file * filp, 
+                      unsigned char * data, 
                       size_t size) {
 
     mm_segment_t oldfs;
@@ -138,7 +138,7 @@ static int file_write(struct file* filp,
  * Return: 
  *     
  */
-static inline int file_write_kfifo(struct file* filp, 
+static inline int file_write_kfifo(struct file * filp, 
                                    struct kfifo * kfifo_buf,  
                                    size_t size) {
     size_t put;
@@ -171,7 +171,7 @@ static inline int file_write_kfifo(struct file* filp,
  * Return: 
  *     
  */
-static inline int file_sync(struct file* filp) {
+static inline int file_sync(struct file * filp) {
     vfs_fsync(filp, 0);
     return 0;
 }

@@ -1,18 +1,22 @@
-# Filename: gih.py
-# Author: Weiyang Wang
-# Description: Userland utility program for the gih module. This file creates
-#              an abstract gih class providing the interface for user to
-#              interact and control the gih device.
-#              TODO: This program also includes an test program that could allow
-#              user to test with any interrupt line, despite its intended to be
-#              imported as a python module in other control scripts.
-#
-#              Notice that this script currently REQUIRES ROOT PERMISSION.
-# Date: July 31, 2017
+"""Filename: gih.py
+Author: Weiyang Wang
+Description: Userland utility program for the gih module. This file creates
+             an abstract gih class providing the interface for user to
+             interact and control the gih device.
+             TODO: This program also includes an test program that could allow
+             user to test with any interrupt line, despite its intended to be
+             imported as a python module in other control scripts.
+
+             Notice that this script currently REQUIRES ROOT PERMISSION.
+Date: July 31, 2017
+"""
+
 
 from __future__ import print_function
 import sys
 from sys import stderr
+from sys import stdout
+from multiprocessing import Process
 import subprocess
 import gih_config
 
@@ -34,10 +38,11 @@ class Gih(object):
         __fd {number} -- file descriptor of the gih device
 
     Constants:
-        __GIH_DEVICE {str} -- [device node of gih device]
-        __INTR_LOG {str} -- [device node of "interrupt happened" log]
-        __WQ_N_LOG {str} -- [device node of "entering workqueue" log]
-        __WQ_X_LOG {str} -- [device node of "exiting workqueue" log]
+        __GIH_DEVICE {str} -- device node of gih device
+        __INTR_LOG {str} -- device node of "interrupt happened" log
+        __WQ_N_LOG {str} -- device node of "entering workqueue" log
+        __WQ_X_LOG {str} -- device node of "exiting workqueue" log
+        __MAX_ALL_LOG_SIZE {number} -- max read size of all logs
     """
 
     __isLoaded = False
@@ -50,6 +55,7 @@ class Gih(object):
     __INTR_LOG   = '/dev/gihlog0'
     __WQ_N_LOG   = '/dev/gihlog1'
     __WQ_X_LOG   = '/dev/gihlog2'
+    __MAX_ALL_LOG_SIZE = 256 * 4096
 
 
     @staticmethod
@@ -203,10 +209,10 @@ class Gih(object):
         if all parameters are set.
 
         Keyword Arguments:
-            irq {number} -- [irq number to catch] (default: {-1})
-            delayTime {number} -- [sleep time before send data] (default: {-1})
-            wrtSize {number} -- [size of data to send] (default: {-1})
-            path {str} -- [path of output file] (default: {''})
+            irq {number} -- irq number to catch (default: {-1})
+            delayTime {number} -- sleep time before send data (default: {-1})
+            wrtSize {number} -- size of data to send (default: {-1})
+            path {str} -- path of output file (default: {''})
         """
         if not Gih.__isLoaded:
             if not Gih.loadMod():
@@ -240,7 +246,7 @@ class Gih(object):
         """Set the irq number for gih to capture.
 
         Arguments:
-            irq {number} -- [irq number for gih to capture]
+            irq {number} -- irq number for gih to capture
 
         Returns:
             number -- on success, return the set irq number; otherwise -1
@@ -262,7 +268,7 @@ class Gih(object):
         """Set the delayTime before gih send out data
 
         Arguments:
-            delayTime {number} -- [delayTime in microsecond]
+            delayTime {number} -- delayTime in microsecond
 
         Returns:
             number -- on success, return the set delayTime; otherwise -1
@@ -284,7 +290,7 @@ class Gih(object):
         """Set the size of gih output on each interrupt
 
         Arguments:
-            wrtSize {number} -- [output data size in byte]
+            wrtSize {number} -- output data size in byte
 
         Returns:
             number -- on success, return the set wrtSize; otherwise -1
@@ -306,7 +312,7 @@ class Gih(object):
         """Set the size of gih output on each interrupt
 
         Arguments:
-            wrtSize {number} -- [output data size in byte]
+            wrtSize {number} -- output data size in byte
 
         Returns:
             number -- on success, return the set wrtSize; otherwise -1
@@ -328,7 +334,7 @@ class Gih(object):
         """Set the path of gih output on each interrupt
 
         Arguments:
-            path {str} -- [path of the output file]
+            path {str} -- path of the output file
 
         Returns:
             bool -- True on success, False otherwise
@@ -367,7 +373,160 @@ class Gih(object):
         if self.path == '':
             raise ValueError('Output path not set!')
 
+        self.configured = True
+
         return (gih_config.configure_finish(Gih.__fd) == 0)
+
+
+
+    def readIntrLogs():
+        """Read logs recorded at interrupt happening from the gihlog0 device
+        
+        Returns:
+            list -- list of all logs currently in the file (as strings)
+        """
+         try:
+            with open(Gih.__INTR_LOG, 'r') as logdev:
+                allContent = logdev.read(Gih.__MAX_ALL_LOG_SIZE)
+                logLines = [s + ' at interrupt happening' \
+                            for s in allContent.split('\n')]
+                return logLines
+
+        except IOError:
+            print('Error: open gihlog device file failed, file does not exist.',
+                file = stderr)
+            return False
+
+        except PermissionError:
+            print('Error: open gihlog device file failed, permission denied.',
+                file = stderr)
+            return False
+
+
+
+    def readWQNLogs():
+        """Read logs recorded at entering workquque from the gihlog1 device
+        
+        Returns:
+            list -- list of all logs currently in the file (as strings)
+        """
+        try: 
+            with open(Gih.__WQ_N_LOG, 'r') as logdev:
+                allContent = logdev.read(Gih.__MAX_ALL_LOG_SIZE)
+                logLines = [s + ' at entering workqueue' \
+                            for s in allContent.split('\n')]
+                return logLines
+
+        except IOError:
+            print('Error: open gihlog device file failed, file does not exist.',
+                file = stderr)
+            return False
+
+        except PermissionError:
+            print('Error: open gihlog device file failed, permission denied.',
+                file = stderr)
+            return False
+
+
+
+
+    def readWQXLogs():
+        """Read logs recorded at existing workquque from the gihlog2 device
+        
+        Returns:
+            list -- list of all logs currently in the file (as strings)
+        """
+        try:
+            with open(Gih.__WQ_X_LOG, 'r') as logdev:
+                allContent = logdev.read(Gih.__MAX_ALL_LOG_SIZE)
+                logLines = [s + ' at exiting workqueue' \
+                            for s in allContent.split('\n')]
+                return logLines
+
+        except IOError:
+            print('Error: open gihlog device file failed, file does not exist.',
+                file = stderr)
+            return False
+
+        except PermissionError:
+            print('Error: open gihlog device file failed, permission denied.',
+                file = stderr)
+            return False
+
+
+
+    def readAllLogs(sortKey = 'type'):
+        """Read all logs from all three devices, and return a sorted list of
+        all the logs.
+        
+        Keyword Arguments:
+            sortKey {str} -- sorting key for the logs (default: {'type'})
+                             Acceptable values include:
+                             'type': sort by which log device logs were from
+                             'time': sort by when the logs were recorded
+                             'count': sort by log count         
+        
+        Returns:
+            list -- sorted list of logs
+        
+        Raises:
+            ValueError -- if the sorting key is not supported
+        """
+        # performance issues here when interrupts are frequent.
+        allLogs = readIntrLogs()
+        allLogs.extend(readWQNLogs()).extend(readWQXLogs())
+
+        # okay, python don't have a switch statement...
+        # type: sort by which log device were they from
+        if sortKey == 'type':
+            return allLogs
+
+        # time: sort according to time. Actually a fixed length ASCII.
+        elif sortKey == 'time':
+            return sorted(allLogs, key = lambda x: x.split(']')[0])
+
+        # sort according to interrupt count. Notice that with current 
+        # implementation, all 3 log devices have their own interrupt count
+        # therefore this is NOT in the actual order if there's interrupt 
+        # missed. This should be stable w/ respect to type
+        # this is also slow.
+        elif sortKey == 'count':
+            return sorted(allLogs, key = lambda x: float(x.split()[3]))
+
+        # default case of unsupported key
+        else:
+            raise ValueError('Unsupported sorting key!')
+
+
+    # TODO: potential unicodeError?
+    def queueData(dataStr):
+        """Write data to the gih device. Gih will resent these data out
+        on interrupt happening.
+        
+        Arguments:
+            dataStr {str} -- string to be send out to the device
+        
+        Returns:
+            number -- number of bytes written to gih on success, -1 otherwise
+        """
+        if not Gih.__isOpened:
+            print("Error: device needs to be opened to be writen to.")
+            return -1
+
+        if not self.configured:
+            print("Error: device needs to be configured prior to writing.")
+            return -1
+
+        try:
+            return Gih.__gihFile.write(dataStr)
+            
+        except PermissionError:
+            print('Error: writing to gih device file failed, \
+                   permission denied. \
+                   (root privilage required for kernel operations).',
+                file = stderr)
+            return -1
+
 
 
 
