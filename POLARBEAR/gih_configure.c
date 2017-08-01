@@ -87,7 +87,7 @@ static PyMethodDef config_methods[] = {
 
 static PyObject * moduleinit(void) {
 
-    PyObject *m;
+    PyObject * m;
 
 #if PY_MAJOR_VERSION >= 3
     m = PyModule_Create(&moduledef);
@@ -95,7 +95,7 @@ static PyObject * moduleinit(void) {
     m = Py_InitModule3(MOD_NAME, config_methods, MOD_DOC);
 #endif
 
-    return (m == NULL) ? m : NULL;
+    return (m != NULL) ? m : NULL;
 }
 
 #if PY_MAJOR_VERSION < 3
@@ -106,7 +106,7 @@ PyMODINIT_FUNC initgih_config(void) {
 PyMODINIT_FUNC PyInit_gih_config(void) {
     return moduleinit();
 }
-#endif /* PY_MAJOR_VERSION >= 3 */
+#endif /* PY_MAJOR_VERSION < 3 */
 
 /*
  * Function name: configure_irq
