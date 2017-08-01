@@ -237,7 +237,7 @@ gih_write(struct file * filp,
     
     kfifo_from_user(&gih.data_buf, buffer, length, &copied);
 
-    *offset = atomic_read(&gih.data_wait);
+    *offset = atomic_add_return(copied, &gih.data_wait);
 
     mutex_unlock(&gih.wrt_lock);
 
@@ -440,7 +440,7 @@ static irqreturn_t gih_intr(int irq, void * data) {
     /* enque work, write log */
     struct log intr_log; 
 
-    if (DEBUG) printk(KERN_ALERT "[gih] INTERRUPT CAUGHT.\n")
+    if (DEBUG) printk(KERN_ALERT "[gih] INTERRUPT CAUGHT.\n");
 
     do_gettimeofday(&intr_log.time);
 

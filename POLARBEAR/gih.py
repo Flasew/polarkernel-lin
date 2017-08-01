@@ -136,7 +136,7 @@ class Gih(object):
 
 
     @staticmethod
-    def openDevice():
+    def open():
         """Open the gih device file.
         This device file NEEDS TO BE OPENED while operating.
 
@@ -172,7 +172,7 @@ class Gih(object):
 
 
     @staticmethod
-    def closeDevice():
+    def close():
         """Closed the device file.
         This will stop the gih device from catching interrupts.
 
@@ -199,7 +199,12 @@ class Gih(object):
 
 
 
-    def __init__(self, irq = -1, delayTime = -1, wrtSize = -1, path = ''):
+    def __init__(self,
+                 irq = -1,
+                 delayTime = -1,
+                 wrtSize = -1,
+                 path = '',
+                 gihPath = 'gih.ko'):
         """Create a new gih object
 
         Creates a new gih object with specified parameters. If the gih module
@@ -213,13 +218,14 @@ class Gih(object):
             delayTime {number} -- sleep time before send data (default: {-1})
             wrtSize {number} -- size of data to send (default: {-1})
             path {str} -- path of output file (default: {''})
+            gihPath {str} -- path of the kernel module
         """
         if not Gih.__isLoaded:
-            if not Gih.loadMod():
+            if not Gih.loadMod(gihPath):
                 return
 
         if not Gih.__isOpened:
-            if not Gih.openDevice():
+            if not Gih.open():
                 return
 
         self.configured = False
@@ -379,18 +385,19 @@ class Gih(object):
 
 
 
+    @staticmethod
     def readIntrLogs():
         """Read logs recorded at interrupt happening from the gihlog0 device
-        
+
         Returns:
             list -- list of all logs currently in the file (as strings)
         """
-         try:
+        try:
             with open(Gih.__INTR_LOG, 'r') as logdev:
                 allContent = logdev.read(Gih.__MAX_ALL_LOG_SIZE)
                 logLines = [s + ' at interrupt happening' \
                             for s in allContent.split('\n')]
-                return logLines
+                return logLines[:-1]
 
         except IOError:
             print('Error: open gihlog device file failed, file does not exist.',
@@ -404,18 +411,19 @@ class Gih(object):
 
 
 
+    @staticmethod
     def readWQNLogs():
         """Read logs recorded at entering workquque from the gihlog1 device
-        
+
         Returns:
             list -- list of all logs currently in the file (as strings)
         """
-        try: 
+        try:
             with open(Gih.__WQ_N_LOG, 'r') as logdev:
                 allContent = logdev.read(Gih.__MAX_ALL_LOG_SIZE)
                 logLines = [s + ' at entering workqueue' \
                             for s in allContent.split('\n')]
-                return logLines
+                return logLines[:-1]
 
         except IOError:
             print('Error: open gihlog device file failed, file does not exist.',
@@ -430,9 +438,10 @@ class Gih(object):
 
 
 
+    @staticmethod
     def readWQXLogs():
         """Read logs recorded at existing workquque from the gihlog2 device
-        
+
         Returns:
             list -- list of all logs currently in the file (as strings)
         """
@@ -441,7 +450,7 @@ class Gih(object):
                 allContent = logdev.read(Gih.__MAX_ALL_LOG_SIZE)
                 logLines = [s + ' at exiting workqueue' \
                             for s in allContent.split('\n')]
-                return logLines
+                return logLines[:-1]
 
         except IOError:
             print('Error: open gihlog device file failed, file does not exist.',
@@ -455,26 +464,28 @@ class Gih(object):
 
 
 
+    @staticmethod
     def readAllLogs(sortKey = 'type'):
         """Read all logs from all three devices, and return a sorted list of
         all the logs.
-        
+
         Keyword Arguments:
             sortKey {str} -- sorting key for the logs (default: {'type'})
                              Acceptable values include:
                              'type': sort by which log device logs were from
                              'time': sort by when the logs were recorded
-                             'count': sort by log count         
-        
+                             'count': sort by log count
+
         Returns:
             list -- sorted list of logs
-        
+
         Raises:
             ValueError -- if the sorting key is not supported
         """
         # performance issues here when interrupts are frequent.
-        allLogs = readIntrLogs()
-        allLogs.extend(readWQNLogs()).extend(readWQXLogs())
+        allLogs = Gih.readIntrLogs()
+        allLogs.extend(Gih.readWQNLogs())
+        allLogs.extend(Gih.readWQXLogs())
 
         # okay, python don't have a switch statement...
         # type: sort by which log device were they from
@@ -485,9 +496,9 @@ class Gih(object):
         elif sortKey == 'time':
             return sorted(allLogs, key = lambda x: x.split(']')[0])
 
-        # sort according to interrupt count. Notice that with current 
+        # sort according to interrupt count. Notice that with current
         # implementation, all 3 log devices have their own interrupt count
-        # therefore this is NOT in the actual order if there's interrupt 
+        # therefore this is NOT in the actual order if there's interrupt
         # missed. This should be stable w/ respect to type
         # this is also slow.
         elif sortKey == 'count':
@@ -499,13 +510,13 @@ class Gih(object):
 
 
     # TODO: potential unicodeError?
-    def queueData(dataStr):
+    def queueData(self, dataStr):
         """Write data to the gih device. Gih will resent these data out
         on interrupt happening.
-        
+
         Arguments:
             dataStr {str} -- string to be send out to the device
-        
+
         Returns:
             number -- number of bytes written to gih on success, -1 otherwise
         """
@@ -518,15 +529,28 @@ class Gih(object):
             return -1
 
         try:
-            return Gih.__gihFile.write(dataStr)
-            
+            outByte = Gih.__gihFile.write(dataStr)
+            Gih.__gihFile.flush()
+            return outByte
+
         except PermissionError:
             print('Error: writing to gih device file failed, \
                    permission denied. \
-                   (root privilage required for kernel operations).',
-                file = stderr)
+                   (root privilage required for kernel operations).',\
+                  file = stderr)
             return -1
 
 
 
+    @staticmethod
+    def shutdown():
+        """Shutdown the gih device, wrapper method for both close and unload.
+
+        Returns:
+            bool -- True on success, False otherwise
+        """
+        if Gih.close():
+            Gih.unloadMod()
+            return True
+        return False
 
