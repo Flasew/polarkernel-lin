@@ -1,0 +1,44 @@
+[GIH README]
+============
+Filename: README
+Author:   Weiyang Wang
+Date: Aug 2, 2017
+
+[DESCRIPTION]
+=============
+TODO: I'll finish this file after testing... Especially when I'm not sure
+which branch (which are not created yet) will provide the best performance.
+
+Current implementation uses workqueue and normal work
+
+I'll have a "workdelay" to test performance on delayed work struct and
+another "kthread" branch to test performance on plain kernel thread.
+
+More intensive testing is also needed for these code.
+
+TODO: I may consider put the current Gih python class into a module. 
+
+[HOW TO COMPILE]
+================
+
+
+[HOW TO RUN]
+============
+
+
+[NORMAL OUTPUT]
+===============
+
+
+[ERROR OUTPUT]
+==============
+
+
+[TESTING]
+=========
+
+
+[ADDITIONAL INFORMATION]
+========================
+
+

@@ -78,6 +78,10 @@ DECLARE_KFIFO(data_buf, unsigned char, DATA_FIFO_SZ);
 #define IRQ_WQ_NAME "irq work queue"
 #define PATH_MAX_LEN 128            /* Just a file name... should be enough */
 
+#define TIME_DELTA 20               /* time correction value, wait time will
+                                       be reduced by this TIME_DELTA microsec
+                                       to account for internal delays */ 
+
 typedef struct gih_dev {
     bool configured;                        /* device conf status */
     int irq;                                /* irq line to be registered */
