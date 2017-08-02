@@ -5,7 +5,8 @@
 *.swp
 *.cmd
 *.mod*
+.*.cmd
 modules.order
 Module.symvers
 config
-build
+build/
