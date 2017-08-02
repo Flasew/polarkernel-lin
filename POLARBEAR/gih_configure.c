@@ -2,7 +2,7 @@
  * Filename: gih_configure.h
  * Author: Weiyang Wang
  * Description: User land configuration utility for the gih device,
- *              respoinsible for calling all the ioctl routines to set the
+ *              responsible for calling all the ioctl routines to set the
  *              irq number, delay time, write-file path and write size.
  *
  *              The function defined in this file is supposed to be called 
@@ -10,8 +10,8 @@
  *              (That means try not to directly use this file...)
  *
  *              Currently only supports load-time configuration (can only
- *              confifure the device once, but this can be changed by
- *              making the CONFIGURED field to be modufiable thus the device
+ *              configure the device once, but this can be changed by
+ *              making the CONFIGURED field to be modifiable thus the device
  *              can be re-configured when closed. )
  * Date: Jul 26, 2017
  */
@@ -49,7 +49,7 @@ static PyObject * configure_wrt_sz  (PyObject *, PyObject *);
 static PyObject * configure_path    (PyObject *, PyObject *);
 static PyObject * configure_finish  (PyObject *, PyObject *);
 
-/* register funcitons */
+/* register functions */
 static PyMethodDef config_methods[] = {
 
     { "configure_irq", configure_irq, 
@@ -70,7 +70,7 @@ static PyMethodDef config_methods[] = {
     { NULL, NULL, 0, NULL }
 };
 
-/* initiallization. I tried to make it avaliable for both py2 and 3 here.. */
+/* initialization. I tried to make it available for both py2 and 3 here.. */
 #if PY_MAJOR_VERSION >= 3
   static struct PyModuleDef moduledef = {
     PyModuleDef_HEAD_INIT,
@@ -121,7 +121,7 @@ PyMODINIT_FUNC PyInit_gih_config(void) {
  *     
  * Arguments:
  *     @self: the calling object
- *     @args: argument that wrapps two integer value
+ *     @args: argument that wraps two integer value
  *            arg1: int fd - file descriptor
  *            arg2: int irq - irq number
  *     
@@ -141,7 +141,7 @@ PyMODINIT_FUNC PyInit_gih_config(void) {
 static PyObject * configure_irq(PyObject * self, PyObject * args) {
 
     int irq;                /* irq number */
-    int fd;                 /* file descripter (of gih device) */
+    int fd;                 /* file descriptor (of gih device) */
     errno = 0;              /* error indicator */
 
     /* parse the input number and check validity */
@@ -173,7 +173,7 @@ static PyObject * configure_irq(PyObject * self, PyObject * args) {
  *     
  * Arguments:
  *     @self: the calling object
- *     @args: argument that wrapps two value
+ *     @args: argument that wraps two value
  *            arg1: int fd - file descriptor
  *            arg2: unsigned int time - delay time in ms
  *     
@@ -182,7 +182,7 @@ static PyObject * configure_irq(PyObject * self, PyObject * args) {
  *     
  * Error Condition: 
  *     Argument is invalid if isn't a positive integer. 
- *     Because of the preemtible feature of the kernel, 1 or 0ms delay time
+ *     Because of the preemptive feature of the kernel, 1 or 0 ms delay time
  *     may not work really well.
  *     
  * Return: 
@@ -191,7 +191,7 @@ static PyObject * configure_irq(PyObject * self, PyObject * args) {
  */
 static PyObject * configure_sleep_t(PyObject * self, PyObject * args) {
 
-    unsigned int time;          /* sleeing time */
+    unsigned int time;          /* sleeting time */
     int fd;                     /* file descriptor */
     errno = 0;                  /* error indicator */
 
@@ -219,12 +219,12 @@ static PyObject * configure_sleep_t(PyObject * self, PyObject * args) {
  *     static PyObject * configure_wrt_sz(PyObject * self, PyObject * args);
  *     
  * Description: 
- *     Configure the write size, in bytes, for each write opeartion when an 
+ *     Configure the write size, in bytes, for each write operation when an 
  *     interrupt occurs. Don't make this too big though...
  *     
  * Arguments:
  *     @self: the calling object
- *     @args: argument that wrapps two value
+ *     @args: argument that wraps two value
  *            arg1: int fd - file descriptor
  *            arg2: unsigned int wrt_sz - num of bytes to write upon 
  *                  receive interruption
@@ -237,7 +237,7 @@ static PyObject * configure_sleep_t(PyObject * self, PyObject * args) {
  *     Notice that too big of a write size may cause performance suffer.
  *     
  * Return: 
- *     Return the seted value upon success, 
+ *     Return the set value upon success, 
  *     NULL other wise.
  */
 static PyObject * configure_wrt_sz(PyObject * self, PyObject * args) {
@@ -271,14 +271,14 @@ static PyObject * configure_wrt_sz(PyObject * self, PyObject * args) {
  *     
  * Description: 
  *     Set the path of the output destination of gih device. For the specific
- *     project, this is supposed to be a char deivce under /dev mount point,
+ *     project, this is supposed to be a char device under /dev mount point,
  *     but it should also be possible to write to any existing file. Notice
  *     that by implementation, the gih device will not be able to create a file
  *     if it's not-existing. The python module should check if the file exists.
  *     
  * Arguments:
  *     @self:
- *     @args: argument that wrapps two value
+ *     @args: argument that wraps two value
  *            arg1: int fd - file descriptor
  *            arg2: const char * path - path of the output destination.
  *     
@@ -326,7 +326,7 @@ static PyObject * configure_path(PyObject * self, PyObject * args) {
  *     
  * Arguments:
  *     @self: the calling object
- *     @args: argument that wrapps one value
+ *     @args: argument that wraps one value
  *            arg1: int fd - file descriptor
  *     
  * Side Effects:

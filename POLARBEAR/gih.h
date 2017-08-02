@@ -35,7 +35,7 @@ MODULE_LICENSE("Dual BSD/GPL");
  * i.e. can't change it at run time
  *
  * This could be changed later by manipulating open and close functions,
- * (It's safer, though, to keep it in this way and modify the userland app.)
+ * (It's safer, though, to keep it in this way and modify the user-land app.)
  */
 #define GIH_IOC_CONFIG_IRQ      _IOW(GIH_IOC, 1, int) 
 #define GIH_IOC_CONFIG_SLEEP_T  _IOW(GIH_IOC, 2, unsigned int) 
@@ -43,7 +43,7 @@ MODULE_LICENSE("Dual BSD/GPL");
 #define GIH_IOC_CONFIG_PATH     _IOW(GIH_IOC, 4, const char *)
 #define GIH_IOC_CONFIG_FINISH   _IO (GIH_IOC, 5)
 
-/* individual log, contains a timespec and a irq indntifier */
+/* individual log, contains a timespec and a irq identifier */
 struct log {
     ssize_t byte_sent;              /* number of bytes sent this time
                                        only set by wqlogx device */
@@ -61,7 +61,7 @@ DEFINE_KFIFO(wq_x_buf, struct log, LOG_FIFO_SZ);
 /* log device structure */
 typedef struct log_dev {
     unsigned long irq_count;        /* total number of irq caught; in N & X
-                                       devices they reperesent number of 
+                                       devices they represent number of 
                                        not missed irq */
     dev_t dev_num;                  /* device number */
     struct kfifo * buffer;          /* FIFO buffer */
@@ -80,15 +80,15 @@ DECLARE_KFIFO(data_buf, unsigned char, DATA_FIFO_SZ);
 
 typedef struct gih_dev {
     bool configured;                        /* device conf status */
-    int irq;                                /* irq line to be catched */
+    int irq;                                /* irq line to be registered */
     unsigned int sleep_msec;                /* time to sleep */
     size_t write_size;                      /* how much to write each time */
-    atomic_t data_wait;                     /* number of data on wait */
     dev_t dev_num;                          /* device number */
     struct workqueue_struct * irq_wq;       /* work queue */
     struct file * dest_filp;                /* destination file pointer */
     struct class * gih_class;               /* for sysfs, class */
     struct device * gih_device;             /* for sysfs, device */
+    atomic_t data_wait;                     /* number of data on wait */
     struct work_struct work;                /* work to be put in the queue */
     struct mutex dev_open;                  /* dev can only be opening once */
     struct mutex wrt_lock;                  /* mutex to protect write to file */

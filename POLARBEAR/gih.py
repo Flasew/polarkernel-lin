@@ -1,6 +1,6 @@
 """Filename: gih.py
 Author: Weiyang Wang
-Description: Userland utility program for the gih module. This file creates
+Description: User-land utility program for the gih module. This file creates
              an abstract gih class providing the interface for user to
              interact and control the gih device.
              TODO: This program also includes an test program that could allow
@@ -16,7 +16,6 @@ from __future__ import print_function
 import sys
 from sys import stderr
 from sys import stdout
-from multiprocessing import Process
 import subprocess
 import gih_config
 
@@ -59,8 +58,8 @@ class Gih(object):
 
 
     @staticmethod
-    def loadMod(modPath = 'gih.ko'):
-        """Load the module if it's not loaded. Need root privilage, and
+    def load(modPath = 'gih.ko'):
+        """Load the module if it's not loaded. Need root privilege, and
 
         Arguments:
             modPath {str} -- path of the module. defaulted to a relative path.
@@ -73,7 +72,7 @@ class Gih(object):
             return False
 
         # personally I'd change this one to subprocess.run, which was added in
-        # python 3.5. To maintain compability, I'll use call here
+        # python 3.5. To maintain compatibility, I'll use call here
         cmd = 'insmod {:s}'.format(modPath)
         print('Running shell command: \"{:s}\" ...'.format(cmd))
 
@@ -90,8 +89,8 @@ class Gih(object):
 
 
     @staticmethod
-    def unloadMod():
-        """Unload the module. Need root privilage
+    def unload():
+        """Unload the module. Need root privilege.
 
         Returns:
             bool -- True on success unloading, False otherwise or not loaded.
@@ -116,11 +115,11 @@ class Gih(object):
 
 
     @staticmethod
-    def reloadMod():
+    def reload():
         """Reload the module in order to reset parameters.
-        Need root privilage
+        Need root privilege
 
-        This method requires that the mode is already loaded.
+        This method requires that the mode is already loaded and device closed.
 
         Returns:
             bool -- True on success reloading, False otherwise.
@@ -130,8 +129,8 @@ class Gih(object):
             print('Error: module is not loaded. Call load().', file = stderr)
             return False
 
-        Gih.unloadMod()
-        Gih.loadMod(Gih.__modPath)
+        Gih.unload()
+        Gih.load(Gih.__modPath)
 
 
 
@@ -140,7 +139,7 @@ class Gih(object):
         """Open the gih device file.
         This device file NEEDS TO BE OPENED while operating.
 
-        This method will set the gihfile and fd variables on success
+        This method will set the __gihfile and __fd variables on success
 
         Returns:
             bool -- True on success or already opened,
@@ -165,7 +164,7 @@ class Gih(object):
 
         except PermissionError:
             print('Error: open gih device file failed, permission denied \
-                (root privilage required for kernel operations).',
+                (root privilege required for kernel operations).',
                 file = stderr)
             return False
 
@@ -176,7 +175,7 @@ class Gih(object):
         """Closed the device file.
         This will stop the gih device from catching interrupts.
 
-        This method will also reset the file to None and fd to -1 on success
+        This method will also reset the file to None and __fd to -1 on success
 
         Returns:
             bool -- True on success or not opened, False otherwise
@@ -221,7 +220,7 @@ class Gih(object):
             gihPath {str} -- path of the kernel module
         """
         if not Gih.__isLoaded:
-            if not Gih.loadMod(gihPath):
+            if not Gih.load(gihPath):
                 return
 
         if not Gih.__isOpened:
@@ -413,7 +412,7 @@ class Gih(object):
 
     @staticmethod
     def readWQNLogs():
-        """Read logs recorded at entering workquque from the gihlog1 device
+        """Read logs recorded at entering workqueue from the gihlog1 device
 
         Returns:
             list -- list of all logs currently in the file (as strings)
@@ -440,7 +439,7 @@ class Gih(object):
 
     @staticmethod
     def readWQXLogs():
-        """Read logs recorded at existing workquque from the gihlog2 device
+        """Read logs recorded at existing workqueue from the gihlog2 device
 
         Returns:
             list -- list of all logs currently in the file (as strings)
@@ -510,7 +509,7 @@ class Gih(object):
 
 
     # TODO: potential unicodeError?
-    def queueData(self, dataStr):
+    def write(self, dataStr):
         """Write data to the gih device. Gih will resent these data out
         on interrupt happening.
 
@@ -521,7 +520,7 @@ class Gih(object):
             number -- number of bytes written to gih on success, -1 otherwise
         """
         if not Gih.__isOpened:
-            print("Error: device needs to be opened to be writen to.")
+            print("Error: device needs to be opened to be written to.")
             return -1
 
         if not self.configured:
@@ -536,7 +535,7 @@ class Gih(object):
         except PermissionError:
             print('Error: writing to gih device file failed, \
                    permission denied. \
-                   (root privilage required for kernel operations).',\
+                   (root privilege required for kernel operations).',\
                   file = stderr)
             return -1
 
@@ -550,7 +549,7 @@ class Gih(object):
             bool -- True on success, False otherwise
         """
         if Gih.close():
-            Gih.unloadMod()
+            Gih.unload()
             return True
         return False
 
