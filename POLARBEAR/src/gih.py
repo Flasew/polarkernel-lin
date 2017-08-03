@@ -505,9 +505,6 @@ class Gih(object):
 
         Returns:
             list -- sorted list of logs
-
-        Raises:
-            ValueError -- if the sorting key is not supported
         """
         # performance issues here when interrupts are frequent.
         allLogs = Gih.readIntrLogs()
@@ -531,9 +528,10 @@ class Gih(object):
         elif sortKey == 'count':
             return sorted(allLogs, key = lambda x: float(x.split()[3]))
 
-        # default case of unsupported key
+        # default case of unsupported key, return by type.
         else:
-            raise ValueError('Unsupported sorting key!')
+            print('Unsupported sorting key! Return value sorted by type.')
+            return allLogs
 
 
     # TODO: potential unicodeError?

@@ -4,41 +4,171 @@ Filename: README
 Author:   Weiyang Wang
 Date: Aug 2, 2017
 
+
+Read this doc please. 
+
+
 [DESCRIPTION]
 =============
-TODO: I'll finish this file after testing... Especially when I'm not sure
-which branch (which are not created yet) will provide the best performance.
+This project is consisted of a linux kernel module and a python client
+interface that will allow the user to cache data into a device (called "gih",
+generic interrupt handler). The user will be able to configure the gih device
+to catch interrupts on a specific interrupt request line (irq), and when the 
+device is running, whenever an interrupt occurs, the device will send out a
+specified amount of cached data to a specified destination file after a 
+specified delay time. 
 
-Current implementation uses workqueue and normal work
+Current implementation of this program uses a workqueue to schedule delayed
+output of data. Three logging devices will also be created on module load,
+which records time of interrupt happening, time of entering workqueue, and
+time of exiting workqueue separately. Logs are implemented in a FIFO way, 
+and reading will dequeue currently available logs on the logging device. If 
+the log device is full, new logs will be lost (this is the only way that 
+does not requires locking in the interrupt handler).
 
-I'll have a "workdelay" to test performance on delayed work struct and
-another "kthread" branch to test performance on plain kernel thread.
+The motivation of implementing this program in the kernel space is that since
+linux kernel is not real-time, running a program that deals with relatively 
+accurate delay-time in user space has the risk of user-threads being preempted 
+by kernel threads, which makes the program highly unreliable. In the kernel,
+however, threads will have much higher scheduling priorities and the program 
+should be more trustworthy.
 
-More intensive testing is also needed for these code.
+Running in the kernel mode, though, does have its drawbacks. In-kernel file 
+opening is required for this program, which is generally considered as a bad
+practice; kernel is a much more critical space then userspace, thus any small
+bug runs the risk of bring down the whole operating system. The author had done
+some testing, not super-intensive ones, to this module; but I still can't 
+guarantee that it doesn't contain any bug. Certainly, if the user uses the 
+module in someway other then the suggested way or make modification on the kernel module's source code, unsafe and undefined behavior could 
+(and is likely to) occur, so make sure you understand everything if you hope to
+do so. 
 
-TODO: I may consider put the current Gih python class into a module. 
+Notice that most part of this program requires root access. For some, "sudo" 
+will not suffice -- it has to be running under the superuser.
+
+This module is developed under linux-4.10.28-generic. 
+Python client should run in both python2 and python3.
 
 [HOW TO COMPILE]
 ================
+A Makefile is provided with the program. To compile the program, change the 
+directory to the parent directory of the src folder and run "make".
+
+To compile only the kernel module, run "make kernMod".
+
+To compile only the python client, run "make pyconf".
+
+To re-compile everything, run "make new".
+
+To clear the directories, run "make clean", 
+which will leave the source codes only.
+
+After compilation, a folder named "build" containing all the necessary files
+for running the program will occur in the same directory as the "src" folder. 
+
+Notice that since this program always runs under root, some file created by the
+root account will not be removable without superuser access. Therefore it is
+recommended to run a "sudo make clean" before any "make" operations. 
 
 
 [HOW TO RUN]
 ============
+Except when necessary, 
+ONLY RUN THIS PROGRAM WITH THE PROVIDED PYTHON CLIENT INTERFACE. 
+
+Write your own python script that utilizes the Gih class defined in gih.py.
+
+Some important functions:
+
+Gih.load(gihPath = 'gih.ko')
+    loads the kernel module, located at path.
+
+Gih.unload()
+    unloads the kernel module
+
+Gih.open()
+    opens the gih device. The device must be opened to be running.
+
+Gih.close()
+    closes the gih device.
+
+Gih.shutdown()
+    equiv to consecutive calls to Gih.close() and Gih.unload()
+
+Gih.__init__(self,
+             irq = -1,
+             delayTime = -1,
+             wrtSize = -1,
+             path = '',
+             gihPath = 'gih.ko')
+    initialize a Gih object, with optional parameters set at initialization.
+
+Gih.configure*(self, *)
+    configure an aspect (irq, delayTime, wrtSize, path) of the device
+
+Gih.start(self)
+    start the device after configuration
+
+Gih.stop(self)
+    stop the device temporarily to allow re-configuration
+
+Gih.write(self, dataStr, block = False)
+    cache data into the gih device, with optional setting of block or not if
+    the device's data buffer is full.
+
+Gih.readAllLogs(sortKey = 'type')
+    read all logs from three logging device into a list, sort them according
+    to the sort key (being 'type', 'time', or 'count')
+
+For detailed documentation of Gih class, look into the doc-strings of gih.py
+located under "src" (a same copy will occur under "build"after compile). For 
+testing purposes, it is possible to use the interactive console of python.
 
 
 [NORMAL OUTPUT]
 ===============
+TODO: I'll add necessary examples to here later.
 
 
 [ERROR OUTPUT]
 ==============
+A DEBUG option is available in "src/gih.h" which if set, will print (many) 
+additional information to system log ("dmesg").
+
+When the kernel module encounters an error, an error message will be printed
+to the system log. Or if some how the kernel panics information will also be 
+available in the system log...
+
+For the python module, error messages will be printed to stderr.
 
 
 [TESTING]
 =========
+This module is expected to deal with relatively frequent interrupt source 
+(~70Hz), together with random writing operations. However, the author does not
+have such a frequent interrupt source, and the testing is mainly done by 
+catching keyboard interrupts (~0.125ms interval, which is only ~8Hz).
+
+Anyway, the program passed the test with continuous keyboard interrupts and
+a infinite loop in python contently writing data:
+
+while True:
+    device.write("123456789");
+    time.sleep(0.5)
+
+With no interrupt missing and acceptable performance. The device corner cases
+of buffer being full and log devices being full were also tested, and was 
+all running as intended. 
 
 
 [ADDITIONAL INFORMATION]
 ========================
+Next steps:
+Implementing the delay with delayed_work structure to test performance. 
+Implementing the workqueue's functionality with plain kernel thread. 
+
+
+
+
 
 
