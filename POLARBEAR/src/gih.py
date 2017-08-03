@@ -227,7 +227,7 @@ class Gih(object):
             if not Gih.open():
                 return
 
-        self.configured = False
+        self.setup = False
 
         self.irq = irq
         if irq != -1:
@@ -235,7 +235,7 @@ class Gih(object):
 
         self.delayTime = delayTime
         if delayTime != -1:
-            self.configureDelayTime(delayTime)
+            self.setupelayTime(delayTime)
 
         self.wrtSize = wrtSize
         if wrtSize != -1:
@@ -257,7 +257,12 @@ class Gih(object):
             number -- on success, return the set irq number; otherwise -1
         """
         if not Gih.__isOpened:
-            print("Error: device needs to be opened prior to configuration.")
+            print('Error: device needs to be opened prior to configuration.',\
+                file = stderr)
+            return -1
+
+        if self.setup:
+            print('Error: device running.', file = stderr)
             return -1
 
         if gih_config.configure_irq(Gih.__fd, irq) == irq:
@@ -279,7 +284,12 @@ class Gih(object):
             number -- on success, return the set delayTime; otherwise -1
         """
         if not Gih.__isOpened:
-            print("Error: device needs to be opened prior to configuration.")
+            print('Error: device needs to be opened prior to configuration.',\
+                file = stderr)
+            return -1
+
+        if self.setup:
+            print('Error: device running.', file = stderr)
             return -1
 
         if gih_config.configure_sleep_t(Gih.__fd, delayTime) == delayTime:
@@ -301,7 +311,12 @@ class Gih(object):
             number -- on success, return the set wrtSize; otherwise -1
         """
         if not Gih.__isOpened:
-            print("Error: device needs to be opened prior to configuration.")
+            print('Error: device needs to be opened prior to configuration.',\
+                file = stderr)
+            return -1
+
+        if self.setup:
+            print('Error: device running.', file = stderr)
             return -1
 
         if gih_config.configure_wrt_sz(Gih.__fd, wrtSize) == wrtSize:
@@ -311,27 +326,6 @@ class Gih(object):
 
         return self.wrtSize
 
-
-
-    def configureWrtSize(self, wrtSize):
-        """Set the size of gih output on each interrupt
-
-        Arguments:
-            wrtSize {number} -- output data size in byte
-
-        Returns:
-            number -- on success, return the set wrtSize; otherwise -1
-        """
-        if not Gih.__isOpened:
-            print("Error: device needs to be opened prior to configuration.")
-            return -1
-
-        if gih_config.configure_wrt_sz(Gih.__fd, wrtSize) == wrtSize:
-            self.wrtSize = wrtSize
-        else:
-            self.wrtSize = -1
-
-        return self.wrtSize
 
 
 
@@ -345,7 +339,12 @@ class Gih(object):
             bool -- True on success, False otherwise
         """
         if not Gih.__isOpened:
-            print("Error: device needs to be opened prior to configuration.")
+            print('Error: device needs to be opened prior to configuration.',\
+                file = stderr)
+            return -1
+
+        if self.setup:
+            print('Error: device running.', file = stderr)
             return -1
 
         if gih_config.configure_path(Gih.__fd, path) == len(path):
@@ -357,15 +356,23 @@ class Gih(object):
 
 
 
-    def configureFinish(self):
+    def start(self):
         """Finish configuration of the gih device. Checks error.
 
         Raises:
-            ValueError -- if any value is left unset, will raise a ValueError.
+            ValueError -- if any value is left unset, or the device is not
+                          opened / is already running, will raise a ValueError.
 
         Returns:
             bool -- True on success, False otherwise
         """
+        if not Gih.__isOpened:
+            raise ValueError('Error: device needs \
+                to be opened prior to start running.')
+                
+        if self.setup:
+            raise ValueError('Error: device already running.')
+
         if self.irq == -1:
             raise ValueError('IRQ not set!')
 
@@ -378,9 +385,29 @@ class Gih(object):
         if self.path == '':
             raise ValueError('Output path not set!')
 
-        self.configured = True
+        self.setup = True
 
-        return (gih_config.configure_finish(Gih.__fd) == 0)
+        return (gih_config.configure_start(Gih.__fd) == 0)
+
+
+    def stop(self):
+        """Stops gih device and allow re-configuration.
+
+        Raises:
+            ValueError -- if device is not opened / is not running
+        Returns:
+            bool -- True on success, False otherwise
+        """
+        if not Gih.__isOpened:
+            raise ValueError('Error: device needs \
+                to be opened prior to stop running.')
+                
+        if not self.setup:
+            raise ValueError('Error: device not running.')
+
+        self.setup = False
+
+        return (gih_config.configure_stop(Gih.__fd) == 0)
 
 
 
@@ -523,7 +550,7 @@ class Gih(object):
             print("Error: device needs to be opened to be written to.")
             return -1
 
-        if not self.configured:
+        if not self.setup:
             print("Error: device needs to be configured prior to writing.")
             return -1
 

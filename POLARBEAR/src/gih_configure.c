@@ -39,7 +39,8 @@
 #define GIH_IOC_CONFIG_SLEEP_T  _IOW(GIH_IOC, 2, unsigned int) 
 #define GIH_IOC_CONFIG_WRT_SZ   _IOW(GIH_IOC, 3, size_t) 
 #define GIH_IOC_CONFIG_PATH     _IOW(GIH_IOC, 4, const char *)
-#define GIH_IOC_CONFIG_FINISH   _IO (GIH_IOC, 5)
+#define GIH_IOC_CONFIG_START    _IO (GIH_IOC, 5)
+#define GIH_IOC_CONFIG_STOP     _IO (GIH_IOC, 6)
 
 
 /* see the header comments for each function */
@@ -47,7 +48,8 @@ static PyObject * configure_irq     (PyObject *, PyObject *);
 static PyObject * configure_sleep_t (PyObject *, PyObject *);
 static PyObject * configure_wrt_sz  (PyObject *, PyObject *);
 static PyObject * configure_path    (PyObject *, PyObject *);
-static PyObject * configure_finish  (PyObject *, PyObject *);
+static PyObject * configure_start   (PyObject *, PyObject *);
+static PyObject * configure_stop    (PyObject *, PyObject *);
 
 /* register functions */
 static PyMethodDef config_methods[] = {
@@ -64,8 +66,11 @@ static PyMethodDef config_methods[] = {
     { "configure_path", configure_path, 
         METH_VARARGS, "configure path of output" },
 
-    { "configure_finish", configure_finish, 
-        METH_VARARGS, "configuration finished" },
+    { "configure_start", configure_start, 
+        METH_VARARGS, "start device" },
+
+    { "configure_stop", configure_stop, 
+        METH_VARARGS, "stop device" },
 
     { NULL, NULL, 0, NULL }
 };
@@ -314,10 +319,10 @@ static PyObject * configure_path(PyObject * self, PyObject * args) {
 }
 
 /*
- * Function name: configure_finish 
+ * Function name: configure_start 
  * 
  * Function prototype:
- *     static PyObject * configure_finish(PyObject * self, PyObject * args)
+ *     static PyObject * configure_start(PyObject * self, PyObject * args)
  *     
  * Description: 
  *     This function is called after configuration is finished. Currently, 
@@ -338,23 +343,65 @@ static PyObject * configure_path(PyObject * self, PyObject * args) {
  * Return: 
  *     return 0 upon success, NULL otherwise.
  */
-static PyObject * configure_finish(PyObject * self, PyObject * args) {
+static PyObject * configure_start(PyObject * self, PyObject * args) {
 
     int fd;                 /* file descriptor */
     errno = 0;              /* error code */
 
     /* parse the input argument */
-    if (!PyArg_ParseTuple(args, "i:finished", &fd))     return NULL;
+    if (!PyArg_ParseTuple(args, "i:start", &fd))     return NULL;
 
     /* call the ioctl to finish construction */
-    if (ioctl(fd, GIH_IOC_CONFIG_FINISH, NULL) < 0) {
-        err(1, "ioctl(gih): finish configuration");
+    if (ioctl(fd, GIH_IOC_CONFIG_START, NULL) < 0) {
+        err(1, "ioctl(gih): start device");
         return PyErr_Format(PyExc_Exception, 
-            "ioctl(gih): finish configuration failed, error code %s", 
+            "ioctl(gih): start device failed, error code %s", 
             strerror(errno));
     }
 
     return Py_BuildValue("i", 0);
 }
 
+
+/*
+ * Function name: configure_stop 
+ * 
+ * Function prototype:
+ *     static PyObject * configure_stop(PyObject * self, PyObject * args)
+ *     
+ * Description: 
+ *     Stops the device running, and allows re-configuration. 
+ *     
+ * Arguments:
+ *     @self: the calling object
+ *     @args: argument that wraps one value
+ *            arg1: int fd - file descriptor
+ *     
+ * Side Effects:
+ *     On success, set the device status to not-setup
+ *     
+ * Error Condition: 
+ *     The call will fail if the device is not configured.
+ *     
+ * Return: 
+ *     return 0 upon success, NULL otherwise.
+ */
+static PyObject * configure_stop(PyObject * self, PyObject * args) {
+
+    int fd;                 /* file descriptor */
+    errno = 0;              /* error code */
+
+    /* parse the input argument */
+    if (!PyArg_ParseTuple(args, "i:stop", &fd))     return NULL;
+
+    /* call the ioctl to finish construction */
+    if (ioctl(fd, GIH_IOC_CONFIG_STOP, NULL) < 0) {
+        err(1, "ioctl(gih): device stop");
+        return PyErr_Format(PyExc_Exception, 
+            "ioctl(gih): stop device ailed, error code %s", 
+            strerror(errno));
+    }
+
+    return Py_BuildValue("i", 0);
+}
 

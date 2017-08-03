@@ -99,7 +99,6 @@ static log_dev log_devices[3] = { 0 }; /* all the logging device, can be
  *     of the gih device
  *     On non-initial opening, sets up the irq line and opens the destination 
  *     file. Locks the dev_open mutex.
- *     (TODO: set up an emergency routine in case of can't access opened file)
  *     
  * Error Condition: 
  *     Opening for more than once will return -EBUSY.
@@ -124,9 +123,10 @@ static int gih_open(struct inode * inode, struct file * filp) {
     kfifo_reset(&gih.data_buf);
     INIT_WORK(&gih.work, gih_do_work);
 
-    /* if not configured, it's first time, conf. from ioctl needed */
-    if (!gih.configured) {
-        printk(KERN_ALERT "[gih] configuring with ioctl...\n");
+    /* if not configured, configure from ioctl needed 
+        also needs to start running */
+    if (!gih.setup) {
+        printk(KERN_ALERT "[gih] Configure with ioctl...\n");
         /* dump the rest of the work to ioctl */
         return 0;
     }
@@ -183,8 +183,8 @@ static int gih_close(struct inode * inode, struct file * filp) {
     printk(KERN_ALERT "[gih] Releasing gih device...\n");
 
     /* if the device is not functioning, print the necessary message */
-    if (!gih.configured) {
-        printk(KERN_ALERT "[gih] Device still not configured.\n");
+    if (!gih.setup) {
+        printk(KERN_ALERT "[gih] Device haven't been setup.\n");
         destroy_workqueue(gih.irq_wq);
         mutex_unlock(&gih.dev_open);
         return 0;
@@ -304,10 +304,12 @@ static ssize_t gih_write(struct file * filp,
  *         -delay time before data is send out to destination file
  *         -amount of data to send out upon receive each interrupt
  *         -path of the destination file
- *     AFTER all these fields are set, call the last GIH_IOC_CONFIG_FINISH case
- *     to finish configuration and start the gih device. GIH_IOC_CONFIG_FINISH
+ *     AFTER all these fields are set, call the last GIH_IOC_CONFIG_START case
+ *     to finish configuration and start the gih device. GIH_IOC_CONFIG_START
  *     will register irq and open the destination file, which the gih_open() 
  *     function will not do on first opening.
+ *     If wanted to reconfigure the device, call GIH_IOC_CONFIG_STOP to unset
+ *     the device.
  *     
  * Arguments:
  *     @filp: file pointer of the gih char device
@@ -316,7 +318,8 @@ static ssize_t gih_write(struct file * filp,
  *     
  * Side Effects:
  *     For each entry, set the specified field to arg on success.
- *     Start the gih device if is GIH_IOC_CONFIG_FINISH.
+ *     Starts the gih device if is GIH_IOC_CONFIG_START,
+ *     Stpps the device if if is GIH_IOC_CONFIG_STOP.
  *     
  * Error Condition: 
  *     Current implementation allows configuration for one time only. If attempt
@@ -324,75 +327,162 @@ static ssize_t gih_write(struct file * filp,
  *     be returned.
  *     
  * Return: 
- *     0 on success, -EINVAL on failure.
+ *     0 on success, -ERRORCODE on failure.
  */
 static long gih_ioctl(struct file * filp, 
                       unsigned int cmd, 
                       unsigned long arg) {
 
     int length;
-    int error;
-
-    if (gih.configured) 
-        return -EINVAL;
+    int error = 0;
 
     switch (cmd) {
 
         /* irq */
         case GIH_IOC_CONFIG_IRQ:
-            gih.irq = (int)arg;
-            if (DEBUG) printk(KERN_ALERT "[gih] irq configured to %d\n", 
-                gih.irq);
+            if (gih.setup) {
+                printk(KERN_ALERT "[gih] ERROR setting IRQ: device running.\n");
+                error = -EBUSY;
+            }
+
+            else {
+                error = 0;
+                gih.irq = (int)arg;
+
+                if (DEBUG) 
+                    printk(KERN_ALERT "[gih] irq configured to %d\n", gih.irq);
+            }
             break;
 
+
         /* delay time in milliseconds */
-        case GIH_IOC_CONFIG_SLEEP_T:
-            gih.sleep_msec = (unsigned int)arg;
-            if (DEBUG) printk(KERN_ALERT "[gih] sleep time configured to %u\n", 
-                gih.sleep_msec);
+        case GIH_IOC_CONFIG_DELAY_T:
+            if (gih.setup) {
+                printk(KERN_ALERT "[gih] ERROR setting delay time: "
+                    "device running.\n");
+                error = -EBUSY;
+            }
+
+            else {
+                error = 0;
+                gih.sleep_msec = (unsigned int)arg;
+
+                if (DEBUG) 
+                    printk(KERN_ALERT "[gih] delay time configured to %u\n", 
+                        gih.sleep_msec);
+            }
+            
             break;
+
 
         /* amount of data to send on each interrupt */
         case GIH_IOC_CONFIG_WRT_SZ:
-            gih.write_size = (size_t)arg;
-            if (DEBUG) printk(KERN_ALERT "[gih] write size configured to %zu\n",
-                gih.write_size);
+            if (gih.setup) {
+                printk(KERN_ALERT "[gih] ERROR setting write size: "
+                    "device running.\n");
+                error = -EBUSY;
+            }
+
+            else {
+
+                error = 0;
+                gih.write_size = (size_t)arg;
+
+                if (DEBUG) 
+                    printk(KERN_ALERT "[gih] write size configured to %zu\n",
+                        gih.write_size);
+            }
+            
             break;
+
 
         /* path of the destination file */
         case GIH_IOC_CONFIG_PATH:
-            length = strlen((const char *)arg);
-            if (length > PATH_MAX_LEN - 1)
-                return -EINVAL;
-            strncpy(gih.path, (const char *)arg, length);
-            gih.path[length] = '\0';
-            if (DEBUG) printk(KERN_ALERT "[gih] path configured to %s\n", 
-                gih.path);
-            gih.dest_filp = file_open(gih.path, O_WRONLY, S_IRWXUGO);
-            if (DEBUG) printk(KERN_ALERT "[gih] file opened successfully: %d", 
-                gih.dest_filp != NULL);
-            break;
-
-        /* make sure to only call this after configuration */
-        case GIH_IOC_CONFIG_FINISH:
-
-            if (DEBUG) printk(KERN_ALERT "[gih] Finishing configuration\n");
-            /* set the irq */
-            error = request_irq(gih.irq, gih_intr, IRQF_SHARED,
-                IRQ_NAME, (void*)&gih);
-            if (error < 0) {
-                printk(KERN_ALERT "[gih] IRQ REQUEST ERROR: %d\n", error);
-                return error;
+            if (gih.setup) {
+                printk(KERN_ALERT "[gih] ERROR setting destination path: "
+                    "device running.\n");
+                error = -EBUSY;
             }
             
-            gih.configured = TRUE;
-            printk(KERN_ALERT "[gih] configuration finished.\n");
+            else {
+                error = 0;
+                length = strlen((const char *)arg);
+
+                if (length > PATH_MAX_LEN - 1)
+                    return -EINVAL;
+
+                strncpy(gih.path, (const char *)arg, length);
+                gih.path[length] = '\0';
+
+                if (DEBUG) 
+                    printk(KERN_ALERT "[gih] Destination path configured "
+                        "to %s\n", gih.path);
+
+                gih.dest_filp = file_open(gih.path, O_WRONLY, S_IRWXUGO);
+
+                if (DEBUG) 
+                    printk(KERN_ALERT "[gih] file opened successfully: %d", 
+                        gih.dest_filp != NULL);
+            }
+            
             break;
+
+
+        /* make sure to only call this after configuration */
+        case GIH_IOC_CONFIG_START:
+            if (gih.setup) {
+                printk(KERN_ALERT "[gih] ERROR: device already running.\n");
+                error = -EBUSY;
+            }
+            else {
+                error = 0;
+
+                if (DEBUG) printk(KERN_ALERT "[gih] Finishing configuration\n");
+
+                /* set the irq */
+                error = request_irq(gih.irq, gih_intr, IRQF_SHARED,
+                    IRQ_NAME, (void*)&gih);
+
+                if (error < 0) {
+                    printk(KERN_ALERT "[gih] IRQ REQUEST ERROR: %d\n", error);
+                    return error;
+                }
+            
+                gih.setup = TRUE;
+                printk(KERN_ALERT "[gih] Configuration finished, "
+                    "device started.\n");
+
+            }
+            
+            break;
+
+
+        /* this allows reconfiguration. Release irq. */
+        case GIH_IOC_CONFIG_STOP:
+            if (!gih.setup) {
+                printk(KERN_ALERT "[gih] ERROR: device is not running.\n");
+                error = -EBUSY;
+            }
+
+            else {
+                error = 0;
+                
+                free_irq(gih.irq, (void*)&gih);
+                flush_workqueue(gih.irq_wq);
+
+                gih.setup = FALSE;
+                printk(KERN_ALERT "[gih] Device stopped running, "
+                    "reconfiguration available.\n");
+            }
+            
+            break;
+
 
         default:
             return -EINVAL;
     }
-    return 0;
+
+    return error;
 }
 
 /*
@@ -856,8 +946,7 @@ static int __init gih_init(void) {
  *     
  * Error Condition: 
  *     Not callable if the device is still open. This may induce unsafe behavior
- *     if the device is "dead-opened". TODO: a emergency device is needed, 
- *     perhaps, just to unlock the opening lock on the gih device. 
+ *     if the device is "dead-opened". 
  *     
  * Return: 
  *     None

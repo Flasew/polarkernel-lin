@@ -31,17 +31,13 @@ MODULE_LICENSE("Dual BSD/GPL");
 #define GIH_IOC 'G'
 /*
  * ioctl operations are for gih configuration.
- * Current implementation only allows configuration on driver load 
- * i.e. can't change it at run time
- *
- * This could be changed later by manipulating open and close functions,
- * (It's safer, though, to keep it in this way and modify the user-land app.)
  */
 #define GIH_IOC_CONFIG_IRQ      _IOW(GIH_IOC, 1, int) 
-#define GIH_IOC_CONFIG_SLEEP_T  _IOW(GIH_IOC, 2, unsigned int) 
+#define GIH_IOC_CONFIG_DELAY_T  _IOW(GIH_IOC, 2, unsigned int) 
 #define GIH_IOC_CONFIG_WRT_SZ   _IOW(GIH_IOC, 3, size_t) 
 #define GIH_IOC_CONFIG_PATH     _IOW(GIH_IOC, 4, const char *)
-#define GIH_IOC_CONFIG_FINISH   _IO (GIH_IOC, 5)
+#define GIH_IOC_CONFIG_START    _IO (GIH_IOC, 5)
+#define GIH_IOC_CONFIG_STOP     _IO (GIH_IOC, 6)
 
 /* individual log, contains a timespec and a irq identifier */
 struct log {
@@ -83,7 +79,7 @@ DECLARE_KFIFO(data_buf, unsigned char, DATA_FIFO_SZ);
                                        to account for internal delays */ 
 
 typedef struct gih_dev {
-    bool configured;                        /* device conf status */
+    bool setup;                             /* if device has been setup */
     int irq;                                /* irq line to be registered */
     unsigned int sleep_msec;                /* time to sleep */
     size_t write_size;                      /* how much to write each time */
