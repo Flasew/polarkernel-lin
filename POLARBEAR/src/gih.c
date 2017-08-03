@@ -437,7 +437,7 @@ static void gih_do_work(struct work_struct * work) {
 
     n_out_byte = min((size_t)kfifo_len(&gih.data_buf), gih.write_size);
 
-    udelay(gih.sleep_msec * 100 - TIME_DELTA);
+    udelay(gih.sleep_msec * 1000 - TIME_DELTA);
 
     if (DEBUG) printk(KERN_ALERT "[gih] calling write\n");
     out = file_write_kfifo(gih.dest_filp, &gih.data_buf, n_out_byte);
