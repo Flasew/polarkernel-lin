@@ -195,7 +195,7 @@ static int gih_close(struct inode * inode, struct file * filp) {
     flush_workqueue(gih.irq_wq);
     destroy_workqueue(gih.irq_wq);
 
-    mutex_lock(&wrt_lock);
+    mutex_lock(&gih.wrt_lock);
 
     /* if we should remove all missed data, reset kfifo */
     if (!gih.keep_missed) {
@@ -221,7 +221,7 @@ static int gih_close(struct inode * inode, struct file * filp) {
         }
     }
 
-    mutex_unlock(&wrt_lock);
+    mutex_unlock(&gih.wrt_lock);
 
     file_close(gih.dest_filp);
     gih.dest_filp = NULL;

@@ -15,7 +15,7 @@ MODULE_LICENSE("Dual BSD/GPL");
 #define TRUE 1
 #define FALSE 0
 
-#define DEBUG 1
+#define DEBUG 0
 
 /* device names */
 #define GIH_DEV         "gih"       /* device that accepts user input */

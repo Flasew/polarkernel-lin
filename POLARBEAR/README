@@ -39,7 +39,8 @@ practice; kernel is a much more critical space then userspace, thus any small
 bug runs the risk of bring down the whole operating system. The author had done
 some testing, not super-intensive ones, to this module; but I still can't 
 guarantee that it doesn't contain any bug. Certainly, if the user uses the 
-module in someway other then the suggested way or make modification on the kernel module's source code, unsafe and undefined behavior could 
+module in someway other then the suggested way or make modification on the 
+kernel module's source code, unsafe and undefined behavior could 
 (and is likely to) occur, so make sure you understand everything if you hope to
 do so. 
 
@@ -99,6 +100,7 @@ Gih.__init__(self,
              irq = -1,
              delayTime = -1,
              wrtSize = -1,
+             keep_missed = -1,
              path = '',
              gihPath = 'gih.ko')
     initialize a Gih object, with optional parameters set at initialization.

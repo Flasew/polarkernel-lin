@@ -59,8 +59,8 @@ class Gih(object):
                  irq = -1,
                  delayTime = -1,
                  wrtSize = -1,
-                 path = '',
                  keep_missed = -1,
+                 path = '',
                  gihPath = 'gih.ko'):
         """Create a new gih object
 
@@ -221,19 +221,19 @@ class Gih(object):
 
 
     def configureMissed(self, keep_missed):
-        """Set the behavior when missed data happens. 
-        
+        """Set the behavior when missed data happens.
+
         Missed data happens when the user tries to write to a non-empty buffer.
         If keep_missed is set to false, each write will clear the data buffer
         prior to write new data into the buffer;
         otherwise, the data is appended to the old data
 
         Arguments:
-            keep_missed {number} -- if missed data should be kept or not, 
+            keep_missed {number} -- if missed data should be kept or not,
                                     any non-zero number is True and 0 is false.
 
         Returns:
-            number -- on success, returns 0 if set to false, 1 if set to true; 
+            number -- on success, returns 0 if set to false, 1 if set to true;
                       on failure returns -1
         """
         if not Gih.__isOpened:
@@ -266,8 +266,8 @@ class Gih(object):
             bool -- True on success, False otherwise
         """
         if not Gih.__isOpened:
-            raise ValueError('Error: device needs \
-                to be opened prior to start running.')
+            raise ValueError('Error: device needs' +
+                'to be opened prior to start running.')
 
         if self.setup:
             raise ValueError('Error: device already running.')
@@ -280,6 +280,9 @@ class Gih(object):
 
         if self.wrtSize == -1:
             raise ValueError('Write size not set!')
+
+        if self.keep_missed == -1:
+            raise ValueError('Missed data behavior not set.')
 
         if self.path == '':
             raise ValueError('Output path not set!')
@@ -298,8 +301,8 @@ class Gih(object):
             bool -- True on success, False otherwise
         """
         if not Gih.__isOpened:
-            raise ValueError('Error: device needs \
-                to be opened prior to stop running.')
+            raise ValueError('Error: device needs ' +
+                'to be opened prior to stop running.')
 
         if not self.setup:
             raise ValueError('Error: device not running.')
@@ -443,7 +446,7 @@ class Gih(object):
         try:
             print('Opening gih device...', file = stderr)
             Gih.__fd  = os.open(Gih.__GIH_DEVICE, os.O_NONBLOCK | os.O_WRONLY)
-            Gih.__gihFile  = os.fdopen(Gih.__fd, 'w') 
+            Gih.__gihFile  = os.fdopen(Gih.__fd, 'w')
             Gih.__isOpened = True
             return True
 
