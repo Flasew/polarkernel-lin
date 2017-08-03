@@ -16,6 +16,7 @@ from __future__ import print_function
 import sys
 from sys import stderr
 from sys import stdout
+import os
 import subprocess
 import gih_config
 
@@ -54,7 +55,7 @@ class Gih(object):
     __INTR_LOG   = '/dev/gihlog0'
     __WQ_N_LOG   = '/dev/gihlog1'
     __WQ_X_LOG   = '/dev/gihlog2'
-    __MAX_ALL_LOG_SIZE = 256 * 4096
+    __MAX_ALL_LOG_SIZE = 256 * 8192
 
 
     @staticmethod
@@ -152,8 +153,8 @@ class Gih(object):
 
         try:
             print('Opening gih device...', file = stderr)
-            Gih.__gihFile  = open(Gih.__GIH_DEVICE, "w")
-            Gih.__fd       = Gih.__gihFile.fileno()
+            Gih.__fd  = os.open(Gih.__GIH_DEVICE, os.O_NONBLOCK | os.O_WRONLY)
+            Gih.__gihFile       = os.fdopen(Gih.__fd, 'w') #Gih.__gihFile.fileno()
             Gih.__isOpened = True
             return True
 
@@ -369,7 +370,7 @@ class Gih(object):
         if not Gih.__isOpened:
             raise ValueError('Error: device needs \
                 to be opened prior to start running.')
-                
+
         if self.setup:
             raise ValueError('Error: device already running.')
 
@@ -401,7 +402,7 @@ class Gih(object):
         if not Gih.__isOpened:
             raise ValueError('Error: device needs \
                 to be opened prior to stop running.')
-                
+
         if not self.setup:
             raise ValueError('Error: device not running.')
 
@@ -536,12 +537,13 @@ class Gih(object):
 
 
     # TODO: potential unicodeError?
-    def write(self, dataStr):
+    def write(self, dataStr, block = False):
         """Write data to the gih device. Gih will resent these data out
         on interrupt happening.
 
         Arguments:
             dataStr {str} -- string to be send out to the device
+            block {bool} -- should the write call block if the device is full
 
         Returns:
             number -- number of bytes written to gih on success, -1 otherwise
@@ -551,12 +553,15 @@ class Gih(object):
             return -1
 
         if not self.setup:
-            print("Error: device needs to be configured prior to writing.")
+            print("Error: device needs to be started prior to writing.")
             return -1
 
         try:
-            outByte = Gih.__gihFile.write(dataStr)
-            Gih.__gihFile.flush()
+            if block:
+                outByte = Gih.__gihFile.write(dataStr)
+                Gih.__gihFile.flush()
+            else:
+                outByte = os.write(Gih.__fd, dataStr.encode('ascii'))
             return outByte
 
         except PermissionError:

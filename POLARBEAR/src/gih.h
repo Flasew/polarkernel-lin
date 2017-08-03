@@ -48,7 +48,7 @@ struct log {
 };
 
 /* FIFO buffer for logging devices */
-#define LOG_FIFO_SZ 4096                        /* buffer size of FIFO */
+#define LOG_FIFO_SZ 8192                        /* buffer size of FIFO */
 #define LOG_STR_BUF_SZ 256                      /* max len for log string */
 DEFINE_KFIFO(ilog_buf, struct log, LOG_FIFO_SZ);    
 DEFINE_KFIFO(wq_n_buf, struct log, LOG_FIFO_SZ);

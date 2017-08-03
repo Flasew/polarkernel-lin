@@ -267,8 +267,8 @@ static ssize_t gih_write(struct file * filp,
 
     /* check how much space is still left */
     if ((avail = kfifo_avail(&gih.data_buf)) < len - 1) 
-        printk(KERN_ALERT "[gih] Warning: gih buffer is full, "
-            "%zu byte loss occurred.\n", len - avail);
+        printk(KERN_ALERT "[gih] WARNING: gih buffer is full, "
+            "%zu byte not written in this call.\n", len - avail);
 
     length = min(len, avail);
     

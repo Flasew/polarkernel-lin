@@ -26,7 +26,7 @@ pyconf:
 	cp $(PWD)/$(BUILD)/*/*.so $(PWD)/../$(BUILD)
 
 clean:
-	@rm -rf *.o *.ko *.so *.pyc .*.cmd .tmp_versions \
+	rm -rf *.o *.ko *.so *.pyc .*.cmd .tmp_versions \
 		modules.order Module.symvers *.mod.* build __pycache__ 
 	
 .PHONY: clean
