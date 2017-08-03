@@ -51,7 +51,7 @@ static ssize_t gih_write(struct file *, const char __user *, size_t, loff_t *);
 static irqreturn_t gih_intr(int, void *);
 static void gih_do_work(struct work_struct *);
 
-static struct file_operations gih_fops = {
+struct file_operations gih_fops = {
     .owner              = THIS_MODULE,
     .write              = gih_write,
     .unlocked_ioctl     = gih_ioctl, 
@@ -66,7 +66,7 @@ static int log_open(struct inode *, struct file *);
 static int log_close(struct inode *, struct file *);
 static ssize_t log_read(struct file *, char *, size_t, loff_t *);
 
-static struct file_operations log_fops = {
+struct file_operations log_fops = {
     .owner   = THIS_MODULE,
     .read    = log_read,
     .open    = log_open,
@@ -75,20 +75,6 @@ static struct file_operations log_fops = {
 
 static log_dev log_devices[3] = { 0 }; /* all the logging device, can be
                                           accessed by their minor number */
-
-/* safety device */
-/* this device is only here for unlock all the mutexs, in case a "dead open"
-   happens. Therefore, this device is only here for emergency situations */
-static int gih_emergency_open(struct inode *, struct file *);
-static int gih_emergency_close(struct inode *, struct file *);
-
-static struct file_operations gih_emerg_fops = {
-    .owner   = THIS_MODULE,
-    .open    = gih_emergency_open,
-    .release = gih_emergency_close
-}
-
-/* following code's order: gih, gih_emergency, log */
 
 /*
  * Function name: gih_open
@@ -127,11 +113,8 @@ static int gih_open(struct inode * inode, struct file * filp) {
 
     int error = 0;
 
-    /* emergency condition */
-    if (!gih.dev_open)                {return 0;}
-
     /* lock the gih device, it can only be opened once */
-    if (!mutex_trylock(gih.dev_open)) {return -EBUSY;}
+    if (!mutex_trylock(&gih.dev_open)) {return -EBUSY;}
     
     printk(KERN_ALERT "[gih] Opening gih device...\n");
 
@@ -203,8 +186,7 @@ static int gih_close(struct inode * inode, struct file * filp) {
     if (!gih.configured) {
         printk(KERN_ALERT "[gih] Device still not configured.\n");
         destroy_workqueue(gih.irq_wq);
-        if (gih.dev_open)
-            mutex_unlock(gih.dev_open);
+        mutex_unlock(&gih.dev_open);
         return 0;
     }
 
@@ -234,9 +216,7 @@ static int gih_close(struct inode * inode, struct file * filp) {
     file_close(gih.dest_filp);
     gih.dest_filp = NULL;
 
-    if (gih.dev_open)
-        mutex_unlock(gih.dev_open);
-
+    mutex_unlock(&gih.dev_open);
     return copied;
 }
 
@@ -283,7 +263,7 @@ static ssize_t gih_write(struct file * filp,
 
     if (DEBUG) printk(KERN_ALERT "[gih] Entering write function...\n");
 
-    mutex_lock(gih.wrt_lock);
+    mutex_lock(&gih.wrt_lock);
 
     /* check how much space is still left */
     if ((avail = kfifo_avail(&gih.data_buf)) < len - 1) 
@@ -297,7 +277,7 @@ static ssize_t gih_write(struct file * filp,
     /* TODO: is atomic really more efficient here??? */
     *offset = atomic_add_return(copied, &gih.data_wait);
 
-    mutex_unlock(gih.wrt_lock);
+    mutex_unlock(&gih.wrt_lock);
 
     if (DEBUG) {
         printk(KERN_ALERT "[gih] %d bytes written to gih.\n", copied);
@@ -453,7 +433,7 @@ static void gih_do_work(struct work_struct * work) {
 
     do_gettimeofday(&entry.time);
 
-    mutex_lock(gih.wrt_lock);
+    mutex_lock(&gih.wrt_lock);
 
     n_out_byte = min((size_t)kfifo_len(&gih.data_buf), gih.write_size);
 
@@ -474,7 +454,7 @@ static void gih_do_work(struct work_struct * work) {
 
     file_sync(gih.dest_filp);
 
-    mutex_unlock(gih.wrt_lock);
+    mutex_unlock(&gih.wrt_lock);
 
     if (DEBUG) 
         printk(KERN_ALERT "[gih] %zu bytes written out to dest file.\n", out);
@@ -546,100 +526,6 @@ static irqreturn_t gih_intr(int irq, void * data) {
     return IRQ_HANDLED;
 }
 
-/* emergency device functions */
-/*
- * Function name: gih_emergency_open
- * 
- * Function prototype:
- *     static int gih_emergency_open(struct inode *, struct file *);
- *     
- * Description: 
- *     Opens an emergency device. During one of my testing, my python 
- *     would die out but leave the gih device open, resulting in a never
- *     unload-able module --- and that's bad...
- *     So this emergency device was added. Once opened, it will unlock and
- *     destroy all the device-opening mutexs, allowing the user to 
- *     call close() on the device. After this emergency device is opened, 
- *     the whole module will stop functioning, and MUST be unloaded or 
- *     reloaded.
- *     
- * Arguments:
- *     @inode: inode pointer of the gihemerg char device 
- *     @filp:  file pointer of the gihemerg char device 
- *     
- * Side Effects:
- *     Unlocks and destroys all the device opening mutexs.
- *     
- * Error Condition: 
- *     None. Calling this means some sort of error have already happened.
- *     
- * Return: 
- *     0
- */
-static int gih_emergency_open(struct inode *, struct file *) {
-
-    printk(KERN_EMERG "[gihemerg] EMERGENCY DEVICE OPENED, UNLOCKING "
-        "AND DESTROYING ALL DEVICE OPENING MUTEXES...\n");
-
-    /* unlock all locked mutex */
-    mutex_trylock(gih.dev_open);
-    mutex_trylock(log_devices[INTR_LOG_MINOR].dev_open);
-    mutex_trylock(log_devices[WQ_N_LOG_MINOR].dev_open);
-    mutex_trylock(log_devices[WQ_X_LOG_MINOR].dev_open);
-
-    mutex_unlock(gih.dev_open);
-    mutex_unlock(log_devices[INTR_LOG_MINOR].dev_open);
-    mutex_unlock(log_devices[WQ_N_LOG_MINOR].dev_open);
-    mutex_unlock(log_devices[WQ_X_LOG_MINOR].dev_open);
-
-    mutex_destroy(gih.dev_open);
-    mutex_destroy(log_devices[INTR_LOG_MINOR].dev_open);
-    mutex_destroy(log_devices[WQ_N_LOG_MINOR].dev_open);
-    mutex_destroy(log_devices[WQ_X_LOG_MINOR].dev_open);
-    
-    gih.dev_open = NULL;
-    log_devices[INTR_LOG_MINOR].dev_open = NULL;
-    log_devices[WQ_N_LOG_MINOR].dev_open = NULL;
-    log_devices[WQ_X_LOG_MINOR].dev_open = NULL;
-
-    printk(KERN_EMERG "[gih_emergency] ALL DEVICE OPENING LOCKS DESTROYED. "
-        "PLEASE REOPEN-CLOSE THE DEAD DEVICE, THEN UNLOAD/RELOAD THIS "
-        "MODULE.\n");
-    
-    return 0;
-}
-
-/*
- * Function name: gih_emergency_close
- * 
- * Function prototype:
- *     static int gih_emergency_close(struct inode *, struct file *);
- *     
- * Description: 
- *     Close function of gihemerg device. Just to remind the user that 
- *     the module must be unloaded or reloaded.
- *     
- * Arguments:
- *     @inode: inode pointer of the gihemerg char device 
- *     @filp:  file pointer of the gihemerg char device 
- *     
- * Side Effects:
- *     Prints an important message.
- *     
- * Error Condition: 
- *     None.
- *     
- * Return: 
- *     0
- */
-static int gih_emergency_close(struct inode *, struct file *) {
-
-    printk(KERN_EMERG "[gihemerg] EMERGENCY DEVICE CLOSED "
-        "YOU MUST UNLOAD/RELOAD THIS MODULE.\n");
-
-    return 0;
-}
-
 /* log device function definitions */
 
 /*
@@ -671,9 +557,7 @@ static int log_open(struct inode * inode, struct file * filp) {
 
     unsigned int minor = iminor(inode);
 
-    if (!log_devices[minor].dev_open) {return 0;}
-
-    if (!mutex_trylock(log_devices[minor].dev_open)) {return -EBUSY;}
+    if (!mutex_trylock(&log_devices[minor].dev_open)) {return -EBUSY;}
 
     filp->private_data = &log_devices[minor];
     filp->f_pos = 0;
@@ -709,8 +593,7 @@ static int log_open(struct inode * inode, struct file * filp) {
 static int log_close(struct inode * inode, struct file * filp) {
 
     unsigned int minor = iminor(inode);
-    if (log_devices[minor].dev_open) 
-        mutex_unlock(log_devices[minor].dev_open);
+    mutex_unlock(&log_devices[minor].dev_open);
 
     filp->private_data = NULL;
 
@@ -853,7 +736,6 @@ static int __init gih_init(void) {
     int error;
     int gih_major;
     int log_major;
-    int emergency_major;
 
     /* data buffer of gih */
     INIT_KFIFO(data_buf);
@@ -881,22 +763,6 @@ static int __init gih_init(void) {
         return error;
     }
 
-    /* allocate Maj/Min for gihemerg */
-    error = alloc_chrdev_region(&gih.emerg_dev_num, 0, 1, GIH_EMERG_DEV);
-    if (error) {
-        printk(KERN_ALERT "[gihemerg] ERROR: allocate dev num failed\n");
-        return error;
-    }
-    emergency_major = MAJOR(gih.emerg_dev_num);
-
-    /* initialize/add the cdev of gihemerg */
-    cdev_init(&gih.gih_emerg_cdev, &gih_emerg_fops);
-    error = cdev_add(&gih.gih_emerg_cdev, gih.emerg_dev_num, 1);
-    if (error) {
-        printk(KERN_ALERT "[gihemerg] ERROR: add cdev failed\n");
-        return error;
-    }
-
     /* allocate Maj/min for log */
     error = alloc_chrdev_region(&log_devices[INTR_LOG_MINOR].dev_num, 
             0, 3, LOG_DEV);
@@ -921,8 +787,6 @@ static int __init gih_init(void) {
     gih.gih_class = class_create(THIS_MODULE, GIH_DEV);
     gih.gih_device = device_create(gih.gih_class, NULL, 
         gih.dev_num, &gih, GIH_DEV);
-    gih.gih_emerg_device = device_create(gih.gih_class, NULL, 
-        gih.emerg_dev_num, &gih_emerg_cdev, GIH_EMERG_DEV);
 
     log_devices[INTR_LOG_MINOR].log_class = class_create(THIS_MODULE, LOG_DEV);
     log_devices[WQ_N_LOG_MINOR].log_class = 
@@ -951,19 +815,17 @@ static int __init gih_init(void) {
                 LOG_DEV_FMT, WQ_X_LOG_MINOR);
 
     /* initialize the mutexs */
-    mutex_init(gih.dev_open);
-    mutex_init(gih.wrt_lock);
-    mutex_init(log_devices[INTR_LOG_MINOR].dev_open);
-    mutex_init(log_devices[WQ_N_LOG_MINOR].dev_open);
-    mutex_init(log_devices[WQ_X_LOG_MINOR].dev_open);
+    mutex_init(&gih.dev_open);
+    mutex_init(&gih.wrt_lock);
+    mutex_init(&log_devices[INTR_LOG_MINOR].dev_open);
+    mutex_init(&log_devices[WQ_N_LOG_MINOR].dev_open);
+    mutex_init(&log_devices[WQ_X_LOG_MINOR].dev_open);
 
     printk(KERN_ALERT "[gih] [log] gih module loaded.\n");
 
     if (DEBUG) {
         printk(KERN_ALERT "[gih] GIH: Major: %d, Minor: %d\n",
                 gih_major, MINOR(gih.dev_num));
-        printk(KERN_ALERT "[gihemerg] GIH_EMERG: Major: %d, Minor: %d\n",
-                emerg_major, MINOR(gih.emerg_dev_num));
         printk(KERN_ALERT "[log] Intr log: Major: %d, Minor: %d\n", 
                 log_major, MINOR(log_devices[INTR_LOG_MINOR].dev_num));
         printk(KERN_ALERT "[log] WQ_N log: Major: %d, Minor: %d\n", 
@@ -1012,7 +874,6 @@ static void __exit gih_exit(void) {
     class_destroy(log_devices[INTR_LOG_MINOR].log_class);
 
     device_destroy(gih.gih_class, gih.dev_num);
-    device_destroy(gih.gih_class, gih.emerg_dev_num);
     class_destroy(gih.gih_class);
 
     /* release the registered device region */
@@ -1023,15 +884,11 @@ static void __exit gih_exit(void) {
     cdev_del(&gih.log_cdev);
 
     /* destroy the mutexs */
-    mutex_destroy(gih.wrt_lock);
-    if (gih.dev_open)   
-        mutex_destroy(gih.dev_open);
-    if (log_devices[INTR_LOG_MINOR].dev_open)
-        mutex_destroy(log_devices[INTR_LOG_MINOR].dev_open);
-    if (log_devices[WQ_N_LOG_MINOR])
-        mutex_destroy(log_devices[WQ_N_LOG_MINOR].dev_open);
-    if (log_devices[WQ_X_LOG_MINOR])
-        mutex_destroy(log_devices[WQ_X_LOG_MINOR].dev_open);
+    mutex_destroy(&gih.dev_open);
+    mutex_destroy(&gih.wrt_lock);
+    mutex_destroy(&log_devices[INTR_LOG_MINOR].dev_open);
+    mutex_destroy(&log_devices[WQ_N_LOG_MINOR].dev_open);
+    mutex_destroy(&log_devices[WQ_X_LOG_MINOR].dev_open);
 
     printk(KERN_ALERT "[gih] [log] gih module unloaded.\n");
 }
