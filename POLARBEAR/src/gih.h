@@ -19,6 +19,7 @@ MODULE_LICENSE("Dual BSD/GPL");
 
 /* device names */
 #define GIH_DEV         "gih"       /* device that accepts user input */
+#define GIH_EMERG_DEV   "gihemerg"  /* gih emergency rescue device */
 #define LOG_DEV         "gihlog"    /* logging device for interrupt happen */
 #define LOG_DEV_FMT     "gihlog%d"  /* formatted version */
 
@@ -88,15 +89,18 @@ typedef struct gih_dev {
     unsigned int sleep_msec;                /* time to sleep */
     size_t write_size;                      /* how much to write each time */
     dev_t dev_num;                          /* device number */
+    dev_t emerg_dev_num;                    /* device number of emergency dev */
     struct workqueue_struct * irq_wq;       /* work queue */
     struct file * dest_filp;                /* destination file pointer */
     struct class * gih_class;               /* for sysfs, class */
     struct device * gih_device;             /* for sysfs, device */
+    struct device * gih_emerg_device;       /* emergency device */
+    struct mutex * dev_open;                /* dev can only be opening once */
+    struct mutex * wrt_lock;                /* mutex to protect write to file */
     atomic_t data_wait;                     /* number of data on wait */
     struct work_struct work;                /* work to be put in the queue */
-    struct mutex dev_open;                  /* dev can only be opening once */
-    struct mutex wrt_lock;                  /* mutex to protect write to file */
     struct cdev gih_cdev;                   /* gih char device */
+    struct cdev gih_emerg_cdev;             /* emergency char device */
     struct cdev log_cdev;                   /* log char device */
     struct kfifo data_buf;                  /* buffer of data */
     char path[PATH_MAX_LEN];                /* destination file path */
