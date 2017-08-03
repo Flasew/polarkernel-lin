@@ -235,7 +235,7 @@ class Gih(object):
 
         self.delayTime = delayTime
         if delayTime != -1:
-            self.setupelayTime(delayTime)
+            self.configureDelayTime(delayTime)
 
         self.wrtSize = wrtSize
         if wrtSize != -1:
