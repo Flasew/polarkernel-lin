@@ -3,14 +3,10 @@ Author: Weiyang Wang
 Description: User-land utility program for the gih module. This file creates
              an abstract gih class providing the interface for user to
              interact and control the gih device.
-             TODO: This program also includes an test program that could allow
-             user to test with any interrupt line, despite its intended to be
-             imported as a python module in other control scripts.
 
              Notice that this script currently REQUIRES ROOT PERMISSION.
 Date: July 31, 2017
 """
-
 
 from __future__ import print_function
 import sys
@@ -56,6 +52,299 @@ class Gih(object):
     __WQ_N_LOG   = '/dev/gihlog1'
     __WQ_X_LOG   = '/dev/gihlog2'
     __MAX_ALL_LOG_SIZE = 256 * 8192
+
+
+
+    def __init__(self,
+                 irq = -1,
+                 delayTime = -1,
+                 wrtSize = -1,
+                 path = '',
+                 keep_missed = -1,
+                 gihPath = 'gih.ko'):
+        """Create a new gih object
+
+        Creates a new gih object with specified parameters. If the gih module
+        is not loaded, will load the module.
+        Attributes are set to -1 or empty to denote "unset", if not specified.
+        This function will not finish configuration regardless of
+        if all parameters are set.
+
+        Keyword Arguments:
+            irq {number} -- irq number to catch (default: {-1})
+            delayTime {number} -- sleep time before send data (default: {-1})
+            wrtSize {number} -- size of data to send (default: {-1})
+            path {str} -- path of output file (default: {''})
+            keep_missed {number} -- behavior on missed data, -1 for not set
+                                    (default: {-1})
+            gihPath {str} -- path of the kernel module
+        """
+        if not Gih.__isLoaded:
+            if not Gih.load(gihPath):
+                return
+
+        if not Gih.__isOpened:
+            if not Gih.open():
+                return
+
+        self.setup = False
+
+        self.irq = irq
+        if irq != -1:
+            self.configureIRQ(irq)
+
+        self.delayTime = delayTime
+        if delayTime != -1:
+            self.configureDelayTime(delayTime)
+
+        self.wrtSize = wrtSize
+        if wrtSize != -1:
+            self.configureWrtSize(wrtSize)
+
+        self.keep_missed = keep_missed
+        if keep_missed != -1:
+            self.configureMissed(keep_missed)
+
+        self.path = path
+        if path != '':
+            self.configurePath(path)
+
+
+
+    def configureIRQ(self, irq):
+        """Set the irq number for gih to capture.
+
+        Arguments:
+            irq {number} -- irq number for gih to capture
+
+        Returns:
+            number -- on success, return the set irq number; otherwise -1
+        """
+        if not Gih.__isOpened:
+            print('Error: device needs to be opened prior to configuration.',\
+                file = stderr)
+            return -1
+
+        if self.setup:
+            print('Error: device running.', file = stderr)
+            return -1
+
+        if gih_config.configure_irq(Gih.__fd, irq) == irq:
+            self.irq = irq
+        else:
+            self.irq = -1
+
+        return self.irq
+
+
+
+    def configureDelayTime(self, delayTime):
+        """Set the delayTime before gih send out data
+
+        Arguments:
+            delayTime {number} -- delayTime in microsecond
+
+        Returns:
+            number -- on success, return the set delayTime; otherwise -1
+        """
+        if not Gih.__isOpened:
+            print('Error: device needs to be opened prior to configuration.',\
+                file = stderr)
+            return -1
+
+        if self.setup:
+            print('Error: device running.', file = stderr)
+            return -1
+
+        if gih_config.configure_delay_t(Gih.__fd, delayTime) == delayTime:
+            self.delayTime = delayTime
+        else:
+            self.delayTime = -1
+
+        return self.delayTime
+
+
+
+    def configureWrtSize(self, wrtSize):
+        """Set the size of gih output on each interrupt
+
+        Arguments:
+            wrtSize {number} -- output data size in byte
+
+        Returns:
+            number -- on success, return the set wrtSize; otherwise -1
+        """
+        if not Gih.__isOpened:
+            print('Error: device needs to be opened prior to configuration.',\
+                file = stderr)
+            return -1
+
+        if self.setup:
+            print('Error: device running.', file = stderr)
+            return -1
+
+        if gih_config.configure_wrt_sz(Gih.__fd, wrtSize) == wrtSize:
+            self.wrtSize = wrtSize
+        else:
+            self.wrtSize = -1
+
+        return self.wrtSize
+
+
+
+
+    def configurePath(self, path):
+        """Set the path of gih output on each interrupt
+
+        Arguments:
+            path {str} -- path of the output file
+
+        Returns:
+            bool -- True on success, False otherwise
+        """
+        if not Gih.__isOpened:
+            print('Error: device needs to be opened prior to configuration.',\
+                file = stderr)
+            return -1
+
+        if self.setup:
+            print('Error: device running.', file = stderr)
+            return -1
+
+        if gih_config.configure_path(Gih.__fd, path) == len(path):
+            self.path = path
+            return True
+        else:
+            self.path = ''
+            return False
+
+
+
+    def configureMissed(self, keep_missed):
+        """Set the behavior when missed data happens. 
+        
+        Missed data happens when the user tries to write to a non-empty buffer.
+        If keep_missed is set to false, each write will clear the data buffer
+        prior to write new data into the buffer;
+        otherwise, the data is appended to the old data
+
+        Arguments:
+            keep_missed {number} -- if missed data should be kept or not, 
+                                    any non-zero number is True and 0 is false.
+
+        Returns:
+            number -- on success, returns 0 if set to false, 1 if set to true; 
+                      on failure returns -1
+        """
+        if not Gih.__isOpened:
+            print('Error: device needs to be opened prior to configuration.',\
+                file = stderr)
+            return -1
+
+        if self.setup:
+            print('Error: device running.', file = stderr)
+            return -1
+
+        res = gih_config.configure_missed(Gih.__fd, keep_missed)
+
+        if res == 0 or res == 1:
+            self.keep_missed = res
+        else:
+            self.keep_missed = -1
+
+        return self.keep_missed
+
+
+    def start(self):
+        """Finish configuration of the gih device. Checks error.
+
+        Raises:
+            ValueError -- if any value is left unset, or the device is not
+                          opened / is already running, will raise a ValueError.
+
+        Returns:
+            bool -- True on success, False otherwise
+        """
+        if not Gih.__isOpened:
+            raise ValueError('Error: device needs \
+                to be opened prior to start running.')
+
+        if self.setup:
+            raise ValueError('Error: device already running.')
+
+        if self.irq == -1:
+            raise ValueError('IRQ not set!')
+
+        if self.delayTime == -1:
+            raise ValueError('Delay time not set!')
+
+        if self.wrtSize == -1:
+            raise ValueError('Write size not set!')
+
+        if self.path == '':
+            raise ValueError('Output path not set!')
+
+        self.setup = True
+
+        return (gih_config.configure_start(Gih.__fd) == 0)
+
+
+    def stop(self):
+        """Stops gih device and allow re-configuration.
+
+        Raises:
+            ValueError -- if device is not opened / is not running
+        Returns:
+            bool -- True on success, False otherwise
+        """
+        if not Gih.__isOpened:
+            raise ValueError('Error: device needs \
+                to be opened prior to stop running.')
+
+        if not self.setup:
+            raise ValueError('Error: device not running.')
+
+        self.setup = False
+
+        return (gih_config.configure_stop(Gih.__fd) == 0)
+
+
+
+    # TODO: potential unicodeError?
+    def write(self, dataStr, block = False):
+        """Write data to the gih device. Gih will resent these data out
+        on interrupt happening.
+
+        Arguments:
+            dataStr {str} -- string to be send out to the device
+            block {bool} -- should the write call block if the device is full
+
+        Returns:
+            number -- number of bytes written to gih on success, -1 otherwise
+        """
+        if not Gih.__isOpened:
+            print("Error: device needs to be opened to be written to.")
+            return -1
+
+        if not self.setup:
+            print("Error: device needs to be started prior to writing.")
+            return -1
+
+        try:
+            if block:
+                outByte = Gih.__gihFile.write(dataStr)
+                Gih.__gihFile.flush()
+            else:
+                outByte = os.write(Gih.__fd, dataStr.encode('ascii'))
+            return outByte
+
+        except PermissionError:
+            print('Error: writing to gih device file failed, \
+                   permission denied. \
+                   (root privilege required for kernel operations).',\
+                  file = stderr)
+            return -1
+
 
 
     @staticmethod
@@ -154,7 +443,7 @@ class Gih(object):
         try:
             print('Opening gih device...', file = stderr)
             Gih.__fd  = os.open(Gih.__GIH_DEVICE, os.O_NONBLOCK | os.O_WRONLY)
-            Gih.__gihFile       = os.fdopen(Gih.__fd, 'w') #Gih.__gihFile.fileno()
+            Gih.__gihFile  = os.fdopen(Gih.__fd, 'w') 
             Gih.__isOpened = True
             return True
 
@@ -199,216 +488,17 @@ class Gih(object):
 
 
 
-    def __init__(self,
-                 irq = -1,
-                 delayTime = -1,
-                 wrtSize = -1,
-                 path = '',
-                 gihPath = 'gih.ko'):
-        """Create a new gih object
-
-        Creates a new gih object with specified parameters. If the gih module
-        is not loaded, will load the module.
-        Attributes are set to -1 or empty to denote "unset", if not specified.
-        This function will not finish configuration regardless of
-        if all parameters are set.
-
-        Keyword Arguments:
-            irq {number} -- irq number to catch (default: {-1})
-            delayTime {number} -- sleep time before send data (default: {-1})
-            wrtSize {number} -- size of data to send (default: {-1})
-            path {str} -- path of output file (default: {''})
-            gihPath {str} -- path of the kernel module
-        """
-        if not Gih.__isLoaded:
-            if not Gih.load(gihPath):
-                return
-
-        if not Gih.__isOpened:
-            if not Gih.open():
-                return
-
-        self.setup = False
-
-        self.irq = irq
-        if irq != -1:
-            self.configureIRQ(irq)
-
-        self.delayTime = delayTime
-        if delayTime != -1:
-            self.configureDelayTime(delayTime)
-
-        self.wrtSize = wrtSize
-        if wrtSize != -1:
-            self.configureWrtSize(wrtSize)
-
-        self.path = path
-        if path != '':
-            self.configurePath(path)
-
-
-
-    def configureIRQ(self, irq):
-        """Set the irq number for gih to capture.
-
-        Arguments:
-            irq {number} -- irq number for gih to capture
-
-        Returns:
-            number -- on success, return the set irq number; otherwise -1
-        """
-        if not Gih.__isOpened:
-            print('Error: device needs to be opened prior to configuration.',\
-                file = stderr)
-            return -1
-
-        if self.setup:
-            print('Error: device running.', file = stderr)
-            return -1
-
-        if gih_config.configure_irq(Gih.__fd, irq) == irq:
-            self.irq = irq
-        else:
-            self.irq = -1
-
-        return self.irq
-
-
-
-    def configureDelayTime(self, delayTime):
-        """Set the delayTime before gih send out data
-
-        Arguments:
-            delayTime {number} -- delayTime in microsecond
-
-        Returns:
-            number -- on success, return the set delayTime; otherwise -1
-        """
-        if not Gih.__isOpened:
-            print('Error: device needs to be opened prior to configuration.',\
-                file = stderr)
-            return -1
-
-        if self.setup:
-            print('Error: device running.', file = stderr)
-            return -1
-
-        if gih_config.configure_sleep_t(Gih.__fd, delayTime) == delayTime:
-            self.delayTime = delayTime
-        else:
-            self.delayTime = -1
-
-        return self.delayTime
-
-
-
-    def configureWrtSize(self, wrtSize):
-        """Set the size of gih output on each interrupt
-
-        Arguments:
-            wrtSize {number} -- output data size in byte
-
-        Returns:
-            number -- on success, return the set wrtSize; otherwise -1
-        """
-        if not Gih.__isOpened:
-            print('Error: device needs to be opened prior to configuration.',\
-                file = stderr)
-            return -1
-
-        if self.setup:
-            print('Error: device running.', file = stderr)
-            return -1
-
-        if gih_config.configure_wrt_sz(Gih.__fd, wrtSize) == wrtSize:
-            self.wrtSize = wrtSize
-        else:
-            self.wrtSize = -1
-
-        return self.wrtSize
-
-
-
-
-    def configurePath(self, path):
-        """Set the path of gih output on each interrupt
-
-        Arguments:
-            path {str} -- path of the output file
+    @staticmethod
+    def shutdown():
+        """Shutdown the gih device, wrapper method for both close and unload.
 
         Returns:
             bool -- True on success, False otherwise
         """
-        if not Gih.__isOpened:
-            print('Error: device needs to be opened prior to configuration.',\
-                file = stderr)
-            return -1
-
-        if self.setup:
-            print('Error: device running.', file = stderr)
-            return -1
-
-        if gih_config.configure_path(Gih.__fd, path) == len(path):
-            self.path = path
+        if Gih.close():
+            Gih.unload()
             return True
-        else:
-            self.path = ''
-            return False
-
-
-
-    def start(self):
-        """Finish configuration of the gih device. Checks error.
-
-        Raises:
-            ValueError -- if any value is left unset, or the device is not
-                          opened / is already running, will raise a ValueError.
-
-        Returns:
-            bool -- True on success, False otherwise
-        """
-        if not Gih.__isOpened:
-            raise ValueError('Error: device needs \
-                to be opened prior to start running.')
-
-        if self.setup:
-            raise ValueError('Error: device already running.')
-
-        if self.irq == -1:
-            raise ValueError('IRQ not set!')
-
-        if self.delayTime == -1:
-            raise ValueError('Delay time not set!')
-
-        if self.wrtSize == -1:
-            raise ValueError('Write size not set!')
-
-        if self.path == '':
-            raise ValueError('Output path not set!')
-
-        self.setup = True
-
-        return (gih_config.configure_start(Gih.__fd) == 0)
-
-
-    def stop(self):
-        """Stops gih device and allow re-configuration.
-
-        Raises:
-            ValueError -- if device is not opened / is not running
-        Returns:
-            bool -- True on success, False otherwise
-        """
-        if not Gih.__isOpened:
-            raise ValueError('Error: device needs \
-                to be opened prior to stop running.')
-
-        if not self.setup:
-            raise ValueError('Error: device not running.')
-
-        self.setup = False
-
-        return (gih_config.configure_stop(Gih.__fd) == 0)
+        return False
 
 
 
@@ -526,60 +616,11 @@ class Gih(object):
         # missed. This should be stable w/ respect to type
         # this is also slow.
         elif sortKey == 'count':
-            return sorted(allLogs, key = lambda x: float(x.split()[3]))
+            return sorted(allLogs, key = lambda x: int(x.split()[3]))
 
         # default case of unsupported key, return by type.
         else:
             print('Unsupported sorting key! Return value sorted by type.')
             return allLogs
 
-
-    # TODO: potential unicodeError?
-    def write(self, dataStr, block = False):
-        """Write data to the gih device. Gih will resent these data out
-        on interrupt happening.
-
-        Arguments:
-            dataStr {str} -- string to be send out to the device
-            block {bool} -- should the write call block if the device is full
-
-        Returns:
-            number -- number of bytes written to gih on success, -1 otherwise
-        """
-        if not Gih.__isOpened:
-            print("Error: device needs to be opened to be written to.")
-            return -1
-
-        if not self.setup:
-            print("Error: device needs to be started prior to writing.")
-            return -1
-
-        try:
-            if block:
-                outByte = Gih.__gihFile.write(dataStr)
-                Gih.__gihFile.flush()
-            else:
-                outByte = os.write(Gih.__fd, dataStr.encode('ascii'))
-            return outByte
-
-        except PermissionError:
-            print('Error: writing to gih device file failed, \
-                   permission denied. \
-                   (root privilege required for kernel operations).',\
-                  file = stderr)
-            return -1
-
-
-
-    @staticmethod
-    def shutdown():
-        """Shutdown the gih device, wrapper method for both close and unload.
-
-        Returns:
-            bool -- True on success, False otherwise
-        """
-        if Gih.close():
-            Gih.unload()
-            return True
-        return False
 

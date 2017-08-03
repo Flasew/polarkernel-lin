@@ -36,20 +36,23 @@
 #define GIH_IOC 'G'
 
 #define GIH_IOC_CONFIG_IRQ      _IOW(GIH_IOC, 1, int) 
-#define GIH_IOC_CONFIG_SLEEP_T  _IOW(GIH_IOC, 2, unsigned int) 
+#define GIH_IOC_CONFIG_DELAY_T  _IOW(GIH_IOC, 2, unsigned int) 
 #define GIH_IOC_CONFIG_WRT_SZ   _IOW(GIH_IOC, 3, size_t) 
 #define GIH_IOC_CONFIG_PATH     _IOW(GIH_IOC, 4, const char *)
 #define GIH_IOC_CONFIG_START    _IO (GIH_IOC, 5)
 #define GIH_IOC_CONFIG_STOP     _IO (GIH_IOC, 6)
+#define GIH_IOC_CONFIG_MISS     _IOW(GIH_IOC, 7, int)
 
 
 /* see the header comments for each function */
 static PyObject * configure_irq     (PyObject *, PyObject *);
-static PyObject * configure_sleep_t (PyObject *, PyObject *);
+static PyObject * configure_delay_t (PyObject *, PyObject *);
 static PyObject * configure_wrt_sz  (PyObject *, PyObject *);
 static PyObject * configure_path    (PyObject *, PyObject *);
+static PyObject * configure_missed  (PyObject *, PyObject *);
 static PyObject * configure_start   (PyObject *, PyObject *);
 static PyObject * configure_stop    (PyObject *, PyObject *);
+
 
 /* register functions */
 static PyMethodDef config_methods[] = {
@@ -57,14 +60,17 @@ static PyMethodDef config_methods[] = {
     { "configure_irq", configure_irq, 
         METH_VARARGS, "configure irq number" },
 
-    { "configure_sleep_t", configure_sleep_t,
-        METH_VARARGS, "configure sleep time in ms" },
+    { "configure_delay_t", configure_delay_t,
+        METH_VARARGS, "configure delay time in ms" },
 
     { "configure_wrt_sz", configure_wrt_sz,
         METH_VARARGS, "configure write size in byte" },
 
     { "configure_path", configure_path, 
         METH_VARARGS, "configure path of output" },
+
+    { "configure_missed", configure_missed, 
+        METH_VARARGS, "configure if to keep missed data" },
 
     { "configure_start", configure_start, 
         METH_VARARGS, "start device" },
@@ -165,11 +171,11 @@ static PyObject * configure_irq(PyObject * self, PyObject * args) {
 }
 
 /*
- * Function name: configure_sleep_t
+ * Function name: configure_delay_t
  * 
  * Function prototype:
  *     static PyObject * 
- *     configure_sleep_t(PyObject * self, PyObject * args);
+ *     configure_delay_t(PyObject * self, PyObject * args);
  *     
  * Description: 
  *     Configure the delay time, in milliseconds, for the interrupt handler.
@@ -194,7 +200,7 @@ static PyObject * configure_irq(PyObject * self, PyObject * args) {
  *     On success, returns the sleeping time configured to the device
  *     Otherwise returns NULL
  */
-static PyObject * configure_sleep_t(PyObject * self, PyObject * args) {
+static PyObject * configure_delay_t(PyObject * self, PyObject * args) {
 
     unsigned int time;          /* sleeting time */
     int fd;                     /* file descriptor */
@@ -207,7 +213,7 @@ static PyObject * configure_sleep_t(PyObject * self, PyObject * args) {
     if (!PyArg_ParseTuple(args, "iI:sleep_time", &fd, &time))   return NULL;
 
     /* call the ioctl to set sleep time */
-    if (ioctl(fd, GIH_IOC_CONFIG_SLEEP_T, time) < 0) {
+    if (ioctl(fd, GIH_IOC_CONFIG_DELAY_T, time) < 0) {
         err(1, "ioctl(gih): sleep time configuration");
         return PyErr_Format(PyExc_Exception, 
             "ioctl(gih): sleep time configuration failed, error code %s", 
@@ -316,6 +322,62 @@ static PyObject * configure_path(PyObject * self, PyObject * args) {
     }
 
     return Py_BuildValue("i", strlen(path));
+}
+
+
+/*
+ * Function name: configure_missed
+ * 
+ * Function prototype:
+ *     static PyObject * configure_missed(PyObject * self, PyObject * args);
+ *     
+ * Description: 
+ *     Sets the behavior when "missed data" happens. Missed data happens when
+ *     the user tries to write to a non-empty buffer. If keep_missed is set
+ *     to false, each write will clear the data buffer prior to write new
+ *     data into the buffer; otherwise, the data is appended to the old data.
+ *     
+ * Arguments:
+ *     @self: the calling object
+ *     @args: argument that wraps one value
+ *            arg1: int fd - file descriptor
+ *            arg2: int keep_missed - boolean value indicating keep the 
+ *                  missed data or not.
+ *     
+ * Side Effects:
+ *     On success, set the behavior on data missed
+ *     
+ * Error Condition: 
+ *     Argument should be invalid if its not 0 or 1, but the method
+ *     treats every non-zero value as true.
+ *     
+ * Return: 
+ *     return 0 if set to false, 1 if set to true, NULL on failure.
+ */
+static PyObject * configure_missed(PyObject * self, PyObject * args) {
+
+    int keep_missed;            /* keep missed data or not 
+                                   despite it's an int, only 0 and 1 should 
+                                   be passed in. */
+    int fd;                     /* file descriptor */
+    errno = 0;                  /* error indicator */
+
+    /* parse the input number 
+     * Notice that no overflow check will be performed, better check in 
+     * the python script. 
+     */
+    if (!PyArg_ParseTuple(args, "iI:write_size", &fd, &keep_missed))   
+        return NULL;
+
+    /* call the ioctl to set sleep time */
+    if (ioctl(fd, GIH_IOC_CONFIG_MISS, keep_missed) < 0) {
+        err(1, "ioctl(gih): missed data behavior configuration");
+        return PyErr_Format(PyExc_Exception, 
+            "ioctl(gih): missed data behavior configuration failed, "
+            "error code %s", strerror(errno));
+    }
+
+    return Py_BuildValue("I", (keep_missed == 0) ? 0 : 1);
 }
 
 /*

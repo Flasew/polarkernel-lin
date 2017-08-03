@@ -195,23 +195,33 @@ static int gih_close(struct inode * inode, struct file * filp) {
     flush_workqueue(gih.irq_wq);
     destroy_workqueue(gih.irq_wq);
 
-    /* this would result as dumping all unsent data, skipping the intr */
-    dwait = atomic_read(&gih.data_wait);
-    copied = file_write_kfifo(gih.dest_filp, &gih.data_buf, dwait);
+    mutex_lock(&wrt_lock);
 
-    if  (copied != dwait) {
+    /* if we should remove all missed data, reset kfifo */
+    if (!gih.keep_missed) {
+        kfifo_reset(&gih.data_buf);
+        atomic_set(&gih.data_wait, 0);
+    }
+
+    else {
+        /* this would result as dumping all unsent data, skipping the intr */
+
+        dwait = atomic_read(&gih.data_wait);
+        copied = file_write_kfifo(gih.dest_filp, &gih.data_buf, dwait);
+
         if  (copied < 0) {
             printk(KERN_ALERT "[gih] ERROR writing the rest of data\n");
-            return copied;
         } 
-        else {
+
+        else if (copied != dwait) {
             printk(KERN_ALERT 
                 "[gih] WARNING: data lose occurred, %zu bytes lost\n", 
                 dwait - copied);
+            copied = 0;
         }
-    } 
-    else 
-        copied = 0;
+    }
+
+    mutex_unlock(&wrt_lock);
 
     file_close(gih.dest_filp);
     gih.dest_filp = NULL;
@@ -264,6 +274,12 @@ static ssize_t gih_write(struct file * filp,
     if (DEBUG) printk(KERN_ALERT "[gih] Entering write function...\n");
 
     mutex_lock(&gih.wrt_lock);
+
+    /* if we should remove all missed data, reset kfifo */
+    if (!gih.keep_missed) {
+        kfifo_reset(&gih.data_buf);
+        atomic_set(&gih.data_wait, 0);
+    }
 
     /* check how much space is still left */
     if ((avail = kfifo_avail(&gih.data_buf)) < len - 1) 
@@ -478,6 +494,27 @@ static long gih_ioctl(struct file * filp,
             break;
 
 
+        /* keep missed data or not */
+        case GIH_IOC_CONFIG_MISS:
+            if (gih.setup) {
+                printk(KERN_ALERT "[gih] ERROR setting missed data behavior: "
+                    "device running.\n");
+                error = -EBUSY;
+            }
+
+            else {
+
+                error = 0;
+                gih.keep_missed = ((int)arg == 0) ? FALSE : TRUE;
+
+                if (DEBUG) 
+                    printk(KERN_ALERT "[gih] keep missed data: %d\n",
+                        gih.keep_missed);
+            }
+            
+            break;
+
+
         default:
             return -EINVAL;
     }
@@ -615,6 +652,7 @@ static irqreturn_t gih_intr(int irq, void * data) {
 
     return IRQ_HANDLED;
 }
+
 
 /* log device function definitions */
 
