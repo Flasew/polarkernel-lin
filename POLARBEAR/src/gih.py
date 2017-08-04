@@ -59,7 +59,7 @@ class Gih(object):
                  irq = -1,
                  delayTime = -1,
                  wrtSize = -1,
-                 keep_missed = -1,
+                 keepMissed = -1,
                  path = '',
                  gihPath = 'gih.ko'):
         """Create a new gih object
@@ -75,7 +75,7 @@ class Gih(object):
             delayTime {number} -- sleep time before send data (default: {-1})
             wrtSize {number} -- size of data to send (default: {-1})
             path {str} -- path of output file (default: {''})
-            keep_missed {number} -- behavior on missed data, -1 for not set
+            keepMissed {number} -- behavior on missed data, -1 for not set
                                     (default: {-1})
             gihPath {str} -- path of the kernel module
         """
@@ -101,9 +101,9 @@ class Gih(object):
         if wrtSize != -1:
             self.configureWrtSize(wrtSize)
 
-        self.keep_missed = keep_missed
-        if keep_missed != -1:
-            self.configureMissed(keep_missed)
+        self.keepMissed = keepMissed
+        if keepMissed != -1:
+            self.configureMissed(keepMissed)
 
         self.path = path
         if path != '':
@@ -120,13 +120,21 @@ class Gih(object):
         Returns:
             number -- on success, return the set irq number; otherwise -1
         """
+        if not Gih.__isLoaded:
+            print('Error: module is not loaded.', file = stderr)
+            return -1
+
         if not Gih.__isOpened:
             print('Error: device needs to be opened prior to configuration.',\
                 file = stderr)
             return -1
 
         if self.setup:
-            print('Error: device running.', file = stderr)
+            print('Error: device is running.', file = stderr)
+            return -1
+
+        if type(irq) != int or irq <= 0:
+            print('Error: irq needs to be a positive integer.', file = stderr)
             return -1
 
         if gih_config.configure_irq(Gih.__fd, irq) == irq:
@@ -147,13 +155,22 @@ class Gih(object):
         Returns:
             number -- on success, return the set delayTime; otherwise -1
         """
+        if not Gih.__isLoaded:
+            print('Error: module is not loaded', file = stderr)
+            return -1
+
         if not Gih.__isOpened:
             print('Error: device needs to be opened prior to configuration.',\
                 file = stderr)
             return -1
 
         if self.setup:
-            print('Error: device running.', file = stderr)
+            print('Error: device is running.', file = stderr)
+            return -1
+
+        if type(delayTime) != int or delayTime < 0:
+            print('Error: delay time needs to be a non-negative integer '
+                'in milliseconds.', file = stderr)
             return -1
 
         if gih_config.configure_delay_t(Gih.__fd, delayTime) == delayTime:
@@ -174,13 +191,22 @@ class Gih(object):
         Returns:
             number -- on success, return the set wrtSize; otherwise -1
         """
+        if not Gih.__isLoaded:
+            print('Error: module is not loaded', file = stderr)
+            return -1
+
         if not Gih.__isOpened:
             print('Error: device needs to be opened prior to configuration.',\
                 file = stderr)
             return -1
 
         if self.setup:
-            print('Error: device running.', file = stderr)
+            print('Error: device is running.', file = stderr)
+            return -1
+
+        if type(wrtSize) != int or wrtSize <= 0:
+            print('Error: write size needs to be a positive integer in byte.',
+                    file = stderr)
             return -1
 
         if gih_config.configure_wrt_sz(Gih.__fd, wrtSize) == wrtSize:
@@ -202,13 +228,22 @@ class Gih(object):
         Returns:
             bool -- True on success, False otherwise
         """
+        if not Gih.__isLoaded:
+            print('Error: module is not loaded', file = stderr)
+            return -1
+
         if not Gih.__isOpened:
             print('Error: device needs to be opened prior to configuration.',\
                 file = stderr)
             return -1
 
         if self.setup:
-            print('Error: device running.', file = stderr)
+            print('Error: device is running.', file = stderr)
+            return -1
+
+        if not os.path.isfile(path):
+            print('Error: {:s} does not exist or is not a file.'.format(path),
+                    file = stderr)
             return -1
 
         if gih_config.configure_path(Gih.__fd, path) == len(path):
@@ -220,92 +255,112 @@ class Gih(object):
 
 
 
-    def configureMissed(self, keep_missed):
+    def configureMissed(self, keepMissed):
         """Set the behavior when missed data happens.
 
         Missed data happens when the user tries to write to a non-empty buffer.
-        If keep_missed is set to false, each write will clear the data buffer
+        If keepMissed is set to false, each write will clear the data buffer
         prior to write new data into the buffer;
         otherwise, the data is appended to the old data
 
         Arguments:
-            keep_missed {number} -- if missed data should be kept or not,
+            keepMissed {number} -- if missed data should be kept or not,
                                     any non-zero number is True and 0 is false.
 
         Returns:
             number -- on success, returns 0 if set to false, 1 if set to true;
                       on failure returns -1
         """
+        if not Gih.__isLoaded:
+            print('Error: module is not loaded', file = stderr)
+            return -1
+
         if not Gih.__isOpened:
             print('Error: device needs to be opened prior to configuration.',\
                 file = stderr)
             return -1
 
         if self.setup:
-            print('Error: device running.', file = stderr)
+            print('Error: device is running.', file = stderr)
             return -1
 
-        res = gih_config.configure_missed(Gih.__fd, keep_missed)
+        res = gih_config.configure_missed(Gih.__fd, keepMissed)
 
         if res == 0 or res == 1:
-            self.keep_missed = res
+            self.keepMissed = res
         else:
-            self.keep_missed = -1
+            self.keepMissed = -1
 
-        return self.keep_missed
+        return self.keepMissed
 
 
     def start(self):
         """Finish configuration of the gih device. Checks error.
 
-        Raises:
-            ValueError -- if any value is left unset, or the device is not
-                          opened / is already running, will raise a ValueError.
-
         Returns:
             bool -- True on success, False otherwise
         """
+        if not Gih.__isLoaded:
+            print('Error: module is not loaded', file = stderr)
+            return False
+
         if not Gih.__isOpened:
-            raise ValueError('Error: device needs' +
-                'to be opened prior to start running.')
+            print('Error: device needs to be opened prior to start running.',
+                    file = stderr)
+            return False
 
         if self.setup:
-            raise ValueError('Error: device already running.')
+            print('Error: device already running.', file = stderr)
+            return False
+
+        unset = False
 
         if self.irq == -1:
-            raise ValueError('IRQ not set!')
+            print('IRQ not set!', file = stderr)
+            unset = True
 
         if self.delayTime == -1:
-            raise ValueError('Delay time not set!')
+            print('Delay time not set!', file = stderr)
+            unset = True
 
         if self.wrtSize == -1:
-            raise ValueError('Write size not set!')
+            print('Write size not set!', file = stderr)
+            unset = True
 
-        if self.keep_missed == -1:
-            raise ValueError('Missed data behavior not set.')
+        if self.keepMissed == -1:
+            print('Missed data behavior not set!', file = stderr)
+            unset = True
 
         if self.path == '':
-            raise ValueError('Output path not set!')
+            print('Output path not set!', file = stderr)
+            unset = True
 
-        self.setup = True
+        if unset:
+            return False
 
-        return (gih_config.configure_start(Gih.__fd) == 0)
+        if gih_config.configure_start(Gih.__fd) == 0:
+            self.setup = True
+            return True
 
 
     def stop(self):
         """Stops gih device and allow re-configuration.
 
-        Raises:
-            ValueError -- if device is not opened / is not running
         Returns:
             bool -- True on success, False otherwise
         """
+        if not Gih.__isLoaded:
+            print('Error: module is not loaded', file = stderr)
+            return -1
+
         if not Gih.__isOpened:
-            raise ValueError('Error: device needs ' +
-                'to be opened prior to stop running.')
+            print('Error: device needs to be opened prior to stop running.',
+                    file = stderr)
+            return -1
 
         if not self.setup:
-            raise ValueError('Error: device not running.')
+            print('Error: device not running.', file = stderr)
+            return -1
 
         self.setup = False
 
@@ -325,6 +380,10 @@ class Gih(object):
         Returns:
             number -- number of bytes written to gih on success, -1 otherwise
         """
+        if not Gih.__isLoaded:
+            print('Error: module is not loaded', file = stderr)
+            return -1
+
         if not Gih.__isOpened:
             print("Error: device needs to be opened to be written to.")
             return -1
@@ -342,11 +401,37 @@ class Gih(object):
             return outByte
 
         except PermissionError:
-            print('Error: writing to gih device file failed, \
-                   permission denied. \
-                   (root privilege required for kernel operations).',\
+            print('Error: writing to gih device file failed, ' +
+                   'permission denied. ' +
+                   '(root privilege required for kernel operations).',\
                   file = stderr)
             return -1
+
+
+
+    def __str__(self):
+        """Creates a formatted string of the gih object with its status.
+
+        Returns:
+            str - nicely formatted string about the gih device.
+        """
+
+        return \
+        "========gih device========\n" +\
+        "- Module is {:s}loaded\n".format("" if Gih.__isLoaded else "un") +\
+        "- Device is {:s}.\n"\
+            .format("opened" if Gih.__isOpened else "closed") +\
+        "- Device is currently{:s} running.\n\n"\
+            .format("" if self.setup else " not") +\
+        "- Configuration status (-1 being not configured):\n" +\
+        "     IRQ: {:d}\n".format(self.irq) +\
+        "     Delay Time: {:d} millisecond(s)\n".format(self.delayTime) +\
+        "     Write Size: {:d} byte(s) on interrupt\n".format(self.wrtSize) +\
+        "     Keep Missed Data: {0}\n"\
+            .format("-1" if self.keepMissed == -1 else\
+                   (True if self.keepMissed else False)) +\
+        "     Destination File Path: {:s}\n"\
+            .format("-1" if self.path == "" else self.path)
 
 
 
@@ -432,7 +517,7 @@ class Gih(object):
         """Open the gih device file.
         This device file NEEDS TO BE OPENED while operating.
         However, simply opening the device will not run it, start() needs to be
-        called. 
+        called.
 
         This method will set the __gihfile and __fd variables on success
 
@@ -440,6 +525,10 @@ class Gih(object):
             bool -- True on success or already opened,
             False with printing error message otherwise
         """
+
+        if not Gih.__isLoaded:
+            print('Error: module is not loaded', file = stderr)
+            return -1
 
         if Gih.__isOpened:
             print('Error: device already opened.', file = stderr)
@@ -475,6 +564,10 @@ class Gih(object):
         Returns:
             bool -- True on success or not opened, False otherwise
         """
+        if not Gih.__isLoaded:
+            print('Error: module is not loaded', file = stderr)
+            return -1
+
         if not Gih.__isOpened:
             print('Error: device is not opened.', file = stderr)
             return True

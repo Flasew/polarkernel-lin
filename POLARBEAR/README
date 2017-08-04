@@ -53,7 +53,7 @@ Python client should run in both python2 and python3.
 [HOW TO COMPILE]
 ================
 A Makefile is provided with the program. To compile the program, change the 
-directory to the parent directory of the src folder and run "make".
+directory to the parent directory of the "src" folder and run "make".
 
 To compile only the kernel module, run "make kernMod".
 
@@ -93,14 +93,14 @@ Gih.open()
 Gih.close()
     closes the gih device.
 
-Gih.shutdown()
+Gih.remove()
     equiv to consecutive calls to Gih.close() and Gih.unload()
 
 Gih.__init__(self,
              irq = -1,
              delayTime = -1,
              wrtSize = -1,
-             keep_missed = -1,
+             keepMissed = -1,
              path = '',
              gihPath = 'gih.ko')
     initialize a Gih object, with optional parameters set at initialization.

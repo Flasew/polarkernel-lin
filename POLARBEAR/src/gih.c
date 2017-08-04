@@ -183,7 +183,7 @@ static int gih_close(struct inode * inode, struct file * filp) {
 
     /* if the device is not functioning, print the necessary message */
     if (!gih.setup) {
-        printk(KERN_ALERT "[gih] Device haven't been setup.\n");
+        printk(KERN_ALERT "[gih] Device hasn't been setup.\n");
         destroy_workqueue(gih.irq_wq);
         mutex_unlock(&gih.dev_open);
         return 0;
@@ -341,10 +341,10 @@ static ssize_t gih_write(struct file * filp,
  *     Stpps the device if if is GIH_IOC_CONFIG_STOP.
  *     
  * Error Condition: 
- *     Current implementation allows configuration for one time only. If attempt
- *     to configure a configured device, nothing will happen and -EINVAL will 
- *     be returned.
- *     
+ *     Trying to configure the device while it's running will result in -EBUSY.
+ *     Invalid arguments to ioctl will result in -EINVAL.
+ *     Specific errors will result in its -ERRORCODE.
+ *
  * Return: 
  *     0 on success, -ERRORCODE on failure.
  */
@@ -365,6 +365,13 @@ static long gih_ioctl(struct file * filp,
             }
 
             else {
+                if ((int)arg < 0) {
+                    printk(KERN_ALERT "[gih] ERROR: IRQ "
+                            "needs to be positive.\n");
+                    error = -EINVAL;
+                    break;
+                }
+
                 error = 0;
                 gih.irq = (int)arg;
 
@@ -383,6 +390,13 @@ static long gih_ioctl(struct file * filp,
             }
 
             else {
+                if ((int)arg < 0) {
+                    printk(KERN_ALERT "[gih] ERROR: delay time "
+                            "needs to be non-negative.\n");
+                    error = -EINVAL;
+                    break;
+                }
+
                 error = 0;
                 gih.sleep_msec = (unsigned int)arg;
 
@@ -403,6 +417,12 @@ static long gih_ioctl(struct file * filp,
             }
 
             else {
+                if ((int)arg <= 0) {
+                    printk(KERN_ALERT "[gih] ERROR: writing size "
+                            "needs to be positive.\n");
+                    error = -EINVAL;
+                    break;
+                }
 
                 error = 0;
                 gih.write_size = (size_t)arg;
@@ -439,9 +459,11 @@ static long gih_ioctl(struct file * filp,
 
                 gih.dest_filp = file_open(gih.path, O_WRONLY, S_IRWXUGO);
 
-                if (DEBUG) 
-                    printk(KERN_ALERT "[gih] file opened successfully: %d", 
-                        gih.dest_filp != NULL);
+                if (!gih.dest_filp) {
+                    printk(KERN_ALERT "[gih] ERROR setting destination path: "
+                            "file openeing failed.\n");
+                    error = -EBADF;
+                }
             }
             
             break;
