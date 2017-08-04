@@ -85,10 +85,13 @@ static log_dev log_devices[3] = { 0 }; /* all the logging device, can be
  * Description: 
  *     Open the gih device. The gih device only catches interrupts while being
  *     opened. The open function sets up several fields of the gih_device 
- *     structure; it also sets up the irq line except in the first opening.
+ *     structure; 
  *     In the first opening, the open function expects user to configure the
  *     device by the ioctl methods therefore will not open the destination file
  *     not set up irq. 
+ *
+ *     NEW: now open call will not register irq not open file, ioctl's 
+ *     start will do it. 
  *     
  * Arguments:
  *     @inode: inode pointer of the gih char device 
@@ -110,8 +113,6 @@ static log_dev log_devices[3] = { 0 }; /* all the logging device, can be
  */
 static int gih_open(struct inode * inode, struct file * filp) {
 
-    int error = 0;
-
     /* lock the gih device, it can only be opened once */
     if (!mutex_trylock(&gih.dev_open)) {return -EBUSY;}
     
@@ -123,26 +124,24 @@ static int gih_open(struct inode * inode, struct file * filp) {
     kfifo_reset(&gih.data_buf);
     INIT_WORK(&gih.work, gih_do_work);
 
-    /* if not configured, configure from ioctl needed 
-        also needs to start running */
-    if (!gih.setup) {
-        printk(KERN_ALERT "[gih] Configure with ioctl...\n");
-        /* dump the rest of the work to ioctl */
-        return 0;
-    }
+    printk(KERN_ALERT "[gih] Remember to start the device with ioctl after "
+        "configuration.\n");
 
-    /* otherwise, set up the dest. file and irq */
-    else {
-        error = request_irq(gih.irq, gih_intr, IRQF_SHARED,
-            IRQ_NAME, (void*)&gih);
-        if (error < 0) {
-            printk(KERN_ALERT "[gih] IRQ REQUEST ERROR: %d\n", error);
-            return error;
-        }
+    /* XXX: this part is moved to ioctl's GIH_IOC_CONFIG_START */
 
-        gih.dest_filp = file_open(gih.path, O_WRONLY, S_IRWXUGO);
-    }
-    return error;
+    // /* otherwise, set up the dest. file and irq */
+    // else {
+    //     error = request_irq(gih.irq, gih_intr, IRQF_SHARED,
+    //         IRQ_NAME, (void*)&gih);
+    //     if (error < 0) {
+    //         printk(KERN_ALERT "[gih] IRQ REQUEST ERROR: %d\n", error);
+    //         return error;
+    //     }
+    //
+    //     gih.dest_filp = file_open(gih.path, O_WRONLY, S_IRWXUGO);
+    // }
+    // 
+    return 0;
 }
 
 /*
@@ -152,11 +151,11 @@ static int gih_open(struct inode * inode, struct file * filp) {
  *     static int gih_close(struct inode * inode, struct file * filp);
  *     
  * Description: 
- *     Close the gih device. If the device is running (i.e. configured is true),
+ *     Close the gih device. If the device is running (i.e. setup is true),
  *     gih_close() will release the irq line, close the dest. file, and 
  *     flushes/destroys the workqueue. If there're still data left in the 
- *     gih device (data_wait != 0), current implementation will write all data
- *     left to the dest. file at once.
+ *     gih device (data_wait != 0), depending on keep_missed, gih_close() will
+ *     either discard all the data or dump them all at once
  *     
  * Arguments:
  *     @inode: inode pointer of the gih char device 
@@ -165,7 +164,7 @@ static int gih_open(struct inode * inode, struct file * filp) {
  * Side Effects:
  *     Frees the registered irq, flushes then destroys the workqueue, and
  *     write all the data left into the destination file and close it
- *     if gih is running. Print a message if it's not running.
+ *     if gih is running or discard them. Print a message if it's not running.
  *     Unlock the opening lock.
  *     
  * Error Condition: 
@@ -191,9 +190,13 @@ static int gih_close(struct inode * inode, struct file * filp) {
     }
 
     /* otherwise, release whatever should be released */
-    free_irq(gih.irq, (void*)&gih);
-    flush_workqueue(gih.irq_wq);
+    if (gih.setup) {
+        free_irq(gih.irq, (void*)&gih);
+        flush_workqueue(gih.irq_wq);
+        gih.setup = FALSE;      
+    }
     destroy_workqueue(gih.irq_wq);
+
 
     mutex_lock(&gih.wrt_lock);
 

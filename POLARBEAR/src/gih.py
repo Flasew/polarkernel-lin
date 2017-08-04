@@ -431,6 +431,8 @@ class Gih(object):
     def open():
         """Open the gih device file.
         This device file NEEDS TO BE OPENED while operating.
+        However, simply opening the device will not run it, start() needs to be
+        called. 
 
         This method will set the __gihfile and __fd variables on success
 
@@ -466,7 +468,7 @@ class Gih(object):
     @staticmethod
     def close():
         """Closed the device file.
-        This will stop the gih device from catching interrupts.
+        This will also stop the gih device from catching interrupts.
 
         This method will also reset the file to None and __fd to -1 on success
 
@@ -492,7 +494,7 @@ class Gih(object):
 
 
     @staticmethod
-    def shutdown():
+    def remove():
         """Shutdown the gih device, wrapper method for both close and unload.
 
         Returns:

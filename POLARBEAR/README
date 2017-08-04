@@ -149,7 +149,7 @@ For the python module, error messages will be printed to stderr.
 This module is expected to deal with relatively frequent interrupt source 
 (~70Hz), together with random writing operations. However, the author does not
 have such a frequent interrupt source, and the testing is mainly done by 
-catching keyboard interrupts (~0.125ms interval, which is only ~8Hz).
+catching keyboard interrupts (which is only ~25Hz).
 
 Anyway, the program passed the test with continuous keyboard interrupts and
 a infinite loop in python contently writing data:
