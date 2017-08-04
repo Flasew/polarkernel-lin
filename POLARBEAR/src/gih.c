@@ -8,6 +8,9 @@
  *              Interrupts to catch is specified by the irq number.
  *              See README for more details.
  * Date: July 20, 2017
+ *
+ * XXX: This is the delayed work revision, which uses the delayed_work structure
+ * Date: Aug 4, 2017
  */
 
 #include <linux/init.h>
@@ -32,6 +35,7 @@
 #include <linux/delay.h>
 #include <linux/sysfs.h>
 #include <linux/device.h>
+#include <linux/jiffies.h>
 
 #include <asm/uaccess.h>
 #include <asm/segment.h>
@@ -122,7 +126,7 @@ static int gih_open(struct inode * inode, struct file * filp) {
     atomic_set(&gih.data_wait, 0);
     gih.irq_wq = create_workqueue(IRQ_WQ_NAME);
     kfifo_reset(&gih.data_buf);
-    INIT_WORK(&gih.work, gih_do_work);
+    INIT_DELAYED_WORK(&gih.work, gih_do_work);
 
     printk(KERN_ALERT "[gih] Remember to start the device with ioctl after "
         "configuration.\n");
@@ -399,6 +403,7 @@ static long gih_ioctl(struct file * filp,
 
                 error = 0;
                 gih.sleep_msec = (unsigned int)arg;
+                gih.sleep_jiffies = msecs_to_jiffies(gih.sleep_msec);
 
                 if (DEBUG) 
                     printk(KERN_ALERT "[gih] delay time configured to %u\n", 
@@ -589,8 +594,6 @@ static void gih_do_work(struct work_struct * work) {
 
     n_out_byte = min((size_t)kfifo_len(&gih.data_buf), gih.write_size);
 
-    udelay(gih.sleep_msec * 1000 - TIME_DELTA);
-
     if (DEBUG) printk(KERN_ALERT "[gih] calling write\n");
     out = file_write_kfifo(gih.dest_filp, &gih.data_buf, n_out_byte);
     if (DEBUG) printk(KERN_ALERT "[gih] finished write\n");
@@ -639,7 +642,10 @@ static void gih_do_work(struct work_struct * work) {
  * Description: 
  *     Interrupt handler of the gih device. Top half will record a log of when 
  *     interrupt had happened; bottom half will queue the work of sending output
- *     data on the workqueue.
+ *     data on the workqueue. 
+ *     
+ *     XXX: this version uses queue_delayed_work() call, instead of 
+ *     let the delay happen within the work function. 
  *     
  * Arguments:
  *     @irq
@@ -663,7 +669,7 @@ static irqreturn_t gih_intr(int irq, void * data) {
 
     do_gettimeofday(&intr_log.time);
 
-    queue_work(gih.irq_wq, &gih.work);
+    queue_delayed_work(gih.irq_wq, &gih.work, gih.sleep_jiffies);
 
     intr_log.byte_sent = -1; 
     intr_log.irq_count = log_devices[INTR_LOG_MINOR].irq_count++;

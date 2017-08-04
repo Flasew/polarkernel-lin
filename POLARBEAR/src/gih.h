@@ -5,6 +5,9 @@
  *              Declares several structures, functions, and constants that will
  *              be used in the module.
  * Date: Jul 20, 2017
+ * 
+ * XXX: This is the delayed work revision, which uses the delayed_work structure
+ * Date: Aug 4, 2017
  */
 
 #ifndef _GIH_H

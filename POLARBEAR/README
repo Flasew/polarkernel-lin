@@ -50,6 +50,8 @@ will not suffice -- it has to be running under the superuser.
 This module is developed under linux-4.10.28-generic. 
 Python client should run in both python2 and python3.
 
+* This is the delayed work version. 
+
 [HOW TO COMPILE]
 ================
 A Makefile is provided with the program. To compile the program, change the 
@@ -165,8 +167,10 @@ all running as intended.
 
 [ADDITIONAL INFORMATION]
 ========================
+Implementing the delay with delayed_work structure to test performance (this
+version).
+
 Next steps:
-Implementing the delay with delayed_work structure to test performance. 
 Implementing the workqueue's functionality with plain kernel thread. 
 
 
