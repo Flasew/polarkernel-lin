@@ -29,6 +29,7 @@ class Gih(object):
     Variables:
         __isLoaded {boolean} -- if the module was loaded.
         __isOpened {boolean} -- if the gih device file is opened
+        __setup {boolean} -- if the device has been setup (is running)
         __gihFile {file} -- gih device file
         __modPath {str} -- gih module path
         __fd {number} -- file descriptor of the gih device
@@ -43,6 +44,7 @@ class Gih(object):
 
     __isLoaded = False
     __isOpened = False
+    __setup    = False
     __gihFile  = None
     __modPath  = ''
     __fd       = -1
@@ -87,7 +89,7 @@ class Gih(object):
             if not Gih.open():
                 return
 
-        self.setup = False
+        Gih.__setup = False
 
         self.irq = irq
         if irq != -1:
@@ -129,7 +131,7 @@ class Gih(object):
                 file = stderr)
             return -1
 
-        if self.setup:
+        if Gih.__setup:
             print('Error: device is running.', file = stderr)
             return -1
 
@@ -164,7 +166,7 @@ class Gih(object):
                 file = stderr)
             return -1
 
-        if self.setup:
+        if Gih.__setup:
             print('Error: device is running.', file = stderr)
             return -1
 
@@ -200,7 +202,7 @@ class Gih(object):
                 file = stderr)
             return -1
 
-        if self.setup:
+        if Gih.__setup:
             print('Error: device is running.', file = stderr)
             return -1
 
@@ -237,12 +239,12 @@ class Gih(object):
                 file = stderr)
             return -1
 
-        if self.setup:
+        if Gih.__setup:
             print('Error: device is running.', file = stderr)
             return -1
 
-        if not os.path.isfile(path):
-            print('Error: {:s} does not exist or is not a file.'.format(path),
+        if not os.path.exists(path) or os.path.isdir(path):
+            print('Error: {:s} does not exist or is a directory.'.format(path),
                     file = stderr)
             return -1
 
@@ -280,7 +282,7 @@ class Gih(object):
                 file = stderr)
             return -1
 
-        if self.setup:
+        if Gih.__setup:
             print('Error: device is running.', file = stderr)
             return -1
 
@@ -309,7 +311,7 @@ class Gih(object):
                     file = stderr)
             return False
 
-        if self.setup:
+        if Gih.__setup:
             print('Error: device already running.', file = stderr)
             return False
 
@@ -339,7 +341,7 @@ class Gih(object):
             return False
 
         if gih_config.configure_start(Gih.__fd) == 0:
-            self.setup = True
+            Gih.__setup = True
             return True
 
 
@@ -358,11 +360,11 @@ class Gih(object):
                     file = stderr)
             return -1
 
-        if not self.setup:
+        if not Gih.__setup:
             print('Error: device not running.', file = stderr)
             return -1
 
-        self.setup = False
+        Gih.__setup = False
 
         return (gih_config.configure_stop(Gih.__fd) == 0)
 
@@ -388,7 +390,7 @@ class Gih(object):
             print("Error: device needs to be opened to be written to.")
             return -1
 
-        if not self.setup:
+        if not Gih.__setup:
             print("Error: device needs to be started prior to writing.")
             return -1
 
@@ -422,7 +424,7 @@ class Gih(object):
         "- Device is {:s}.\n"\
             .format("opened" if Gih.__isOpened else "closed") +\
         "- Device is currently{:s} running.\n\n"\
-            .format("" if self.setup else " not") +\
+            .format("" if Gih.__setup else " not") +\
         "- Configuration status (-1 being not configured):\n" +\
         "     IRQ: {:d}\n".format(self.irq) +\
         "     Delay Time: {:d} millisecond(s)\n".format(self.delayTime) +\
@@ -577,6 +579,7 @@ class Gih(object):
             Gih.__gihFile.close()
             Gih.__gihFile  = None
             Gih.__fd       = -1
+            Gih.__setup    = False
             Gih.__isOpened = False
             return True
 
