@@ -92,14 +92,12 @@ static ssize_t echo_write(struct file * filp,
 
     *offset = 0;
     length = min(len, echo.buffer_size - 1);
-    printk(KERN_ALERT "Write length %d\n",length);
     uncped = copy_from_user(echo.buffer, buffer, length);
     if (uncped != 0) {
         printk(KERN_ALERT "ERROR writing to echo\n");
         return length - uncped;
     }
 
-    printk(KERN_ALERT "by return... %d\n",length);
     echo.buffer[length] = '\0';
     echo.message_length = length;
     return length;
