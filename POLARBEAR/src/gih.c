@@ -204,11 +204,9 @@ static int gih_close(struct inode * inode, struct file * filp) {
     }
 
     /* otherwise, release whatever should be released */
-    if (gih.setup) {
-        free_irq(gih.irq, (void*)&gih);
-        complete_all(&gih.comp);
-        gih.setup = FALSE;      
-    }
+    free_irq(gih.irq, (void*)&gih);
+    gih.setup = FALSE;      
+    complete_all(&gih.comp);
     kthread_stop(gih.task);
 
     mutex_lock(&gih.wrt_lock);
@@ -688,9 +686,8 @@ static irqreturn_t gih_intr(int irq, void * data) {
 
     do_gettimeofday(&intr_log.time);
 
-    gih.kthread_flag = 1;
     complete(&gih.comp);
-    rereinit_completion(&gih.comp);
+    //reinit_completion(&gih.comp);
 
     intr_log.byte_sent = -1; 
     intr_log.irq_count = log_devices[INTR_LOG_MINOR].irq_count++;
