@@ -49,7 +49,7 @@ static struct file * file_open(const char * path, int flags, int rights) {
 
     set_fs(oldfs);
 
-    if(IS_ERR(filp)) {
+    if (IS_ERR(filp)) {
         err = PTR_ERR(filp);
         printk(KERN_ALERT "[fio] FILE OPENING FAILED, err code %d\n", err);
         return NULL;

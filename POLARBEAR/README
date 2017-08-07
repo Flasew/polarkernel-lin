@@ -2,7 +2,7 @@
 ============
 Filename: README
 Author:   Weiyang Wang
-Date: Aug 2, 2017
+Date: Aug 7, 2017
 
 
 Read this doc please. 
@@ -18,13 +18,9 @@ device is running, whenever an interrupt occurs, the device will send out a
 specified amount of cached data to a specified destination file after a 
 specified delay time. 
 
-Current implementation of this program uses a workqueue to schedule delayed
-output of data. Three logging devices will also be created on module load,
-which records time of interrupt happening, time of entering workqueue, and
-time of exiting workqueue separately. Logs are implemented in a FIFO way, 
-and reading will dequeue currently available logs on the logging device. If 
-the log device is full, new logs will be lost (this is the only way that 
-does not requires locking in the interrupt handler).
+This version uses a plain kernel thread which loops to wait on an waitqueue, and
+whenever interrupt comes in the waitqueue is signaled thus wake up the thread
+to do the write.
 
 The motivation of implementing this program in the kernel space is that since
 linux kernel is not real-time, running a program that deals with relatively 
@@ -49,10 +45,7 @@ will not suffice -- it has to be running under the superuser.
 
 This module is developed under linux-4.10.28-generic. 
 Python client should run in both python2 and python3.
-
-XXX: This is the kmalloc version, which allocates a new work structure on the
-heap on each interrupt. It will not miss any interrupts, but performance is not
-as guaranteed. 
+ 
 
 [HOW TO COMPILE]
 ================
@@ -150,27 +143,11 @@ For the python module, error messages will be printed to stderr.
 
 [TESTING]
 =========
-This module is expected to deal with relatively frequent interrupt source 
-(~70Hz), together with random writing operations. However, the author does not
-have such a frequent interrupt source, and the testing is mainly done by 
-catching keyboard interrupts (which is only ~25Hz).
-
-Anyway, the program passed the test with continuous keyboard interrupts and
-a infinite loop in python contently writing data:
-
-while True:
-    device.write("123456789");
-    time.sleep(0.5)
-
-With no interrupt missing and acceptable performance. The device corner cases
-of buffer being full and log devices being full were also tested, and was 
-all running as intended. 
+TODO.
 
 
 [ADDITIONAL INFORMATION]
 ========================
-Next steps:
-Implementing the workqueue's functionality with plain kernel thread. 
 
 
 

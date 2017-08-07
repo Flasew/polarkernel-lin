@@ -90,17 +90,15 @@ static log_dev log_devices[3] = { 0 }; /* all the logging device, can be
  *     device by the ioctl methods therefore will not open the destination file
  *     not set up irq. 
  *
- *     NEW: now open call will not register irq not open file, ioctl's 
+ *     Now open call will not register irq nor open file, ioctl's 
  *     start will do it. 
- *
- *     NEW in kmalloc version: works are allocated and initialized dynamically.
  *     
  * Arguments:
  *     @inode: inode pointer of the gih char device 
  *     @filp:  file pointer of the gih char device 
  *     
  * Side Effects:
- *     On all opening, sets up the data_wait, irq_wq, data_buf and work fields 
+ *     On all opening, sets up the data_wait, irq_wq, data_buf and task fields 
  *     of the gih device
  *     On non-initial opening, sets up the irq line and opens the destination 
  *     file. Locks the dev_open mutex.
@@ -122,9 +120,16 @@ static int gih_open(struct inode * inode, struct file * filp) {
 
     /* set up necessary fields */
     atomic_set(&gih.data_wait, 0);
-    gih.irq_wq = create_workqueue(IRQ_WQ_NAME);
+    // gih.irq_wq = create_workqueue(IRQ_WQ_NAME);
+
+    gih.task = kthread_run(gih_do_work, NULL, GIH_THREAD);
+    if (IS_ERR(gih.task)) {
+        PTR_ERR(gih.task);
+        printk(KERN_ALERT "[gih] CREATE KTHREAD FAILED, err code %d\n", err);
+        return -err;
+    }
+
     kfifo_reset(&gih.data_buf);
-    // INIT_WORK(&gih.work, gih_do_work);
 
     printk(KERN_ALERT "[gih] Remember to start the device with ioctl after "
         "configuration.\n");
@@ -155,7 +160,7 @@ static int gih_open(struct inode * inode, struct file * filp) {
  * Description: 
  *     Close the gih device. If the device is running (i.e. setup is true),
  *     gih_close() will release the irq line, close the dest. file, and 
- *     flushes/destroys the workqueue. If there're still data left in the 
+ *     stops the kthread. If there're still data left in the 
  *     gih device (data_wait != 0), depending on keep_missed, gih_close() will
  *     either discard all the data or dump them all at once
  *     
@@ -164,7 +169,7 @@ static int gih_open(struct inode * inode, struct file * filp) {
  *     @filp:  file pointer of the gih char device 
  *     
  * Side Effects:
- *     Frees the registered irq, flushes then destroys the workqueue, and
+ *     Frees the registered irq, removes the kthread, and
  *     write all the data left into the destination file and close it
  *     if gih is running or discard them. Print a message if it's not running.
  *     Unlock the opening lock.
@@ -186,7 +191,7 @@ static int gih_close(struct inode * inode, struct file * filp) {
     /* if the device is not functioning, print the necessary message */
     if (!gih.setup) {
         printk(KERN_ALERT "[gih] Device hasn't been setup.\n");
-        destroy_workqueue(gih.irq_wq);
+        kthread_stop(gih.task);
         mutex_unlock(&gih.dev_open);
         return 0;
     }
@@ -194,10 +199,9 @@ static int gih_close(struct inode * inode, struct file * filp) {
     /* otherwise, release whatever should be released */
     if (gih.setup) {
         free_irq(gih.irq, (void*)&gih);
-        flush_workqueue(gih.irq_wq);
         gih.setup = FALSE;      
     }
-    destroy_workqueue(gih.irq_wq);
+    kthread_stop(struct task_struct *k);
 
 
     mutex_lock(&gih.wrt_lock);
@@ -511,7 +515,7 @@ static long gih_ioctl(struct file * filp,
                 error = 0;
                 
                 free_irq(gih.irq, (void*)&gih);
-                flush_workqueue(gih.irq_wq);
+                // flush_workqueue(gih.irq_wq);
 
                 gih.setup = FALSE;
                 printk(KERN_ALERT "[gih] Device stopped running, "
@@ -550,88 +554,95 @@ static long gih_ioctl(struct file * filp,
 }
 
 /*
- * Function name: gih_do_work
+ * Function name: 
  * 
  * Function prototype:
- *     static void gih_do_work(struct work_struct * work);
+ *     
  *     
  * Description: 
- *     Work function to execute for the work queue, which does the work of 
- *     sending data that was buffered in the gih device to the destination file
- *     This function also generates two log, one on entering the wq, the other
- *     on exiting the wq, and are stored in the gihlog1 and gihlog2 device. 
- *     When debug is turned on, user can examine the performance of the gih 
- *     device from the debug output generated in this function.
+ *     
  *     
  * Arguments:
- *     @work: work structure that is put on the work queue.
+ *     @
  *     
  * Side Effects:
- *     Output at least the specified amount of data (write_size) to the 
- *     destination file. Write two logs to the wq_n_log and wq_x_log device.
+ *     
  *     
  * Error Condition: 
- *     If wrt_lock is contently locked, this function will be blocked.
+ *     
  *     
  * Return: 
- *     No return value.
+ *     
  */
-static void gih_do_work(struct work_struct * work) {
+static int gih_do_work(void) {
+
+    if (DEBUG) printk(KERN_ALERT "[gih] kthread started.\n");
 
     size_t n_out_byte;            /* number of byte to output */
     size_t out = 0;               /* number of byte actually outputted */
     struct log exit;
     struct log entry;
 
-    if (DEBUG) printk(KERN_ALERT "[gih] Entering work queue function...\n");
+    /* loop until kthread stops */
+    while (!kthread_should_stop()) {
 
-    do_gettimeofday(&entry.time);
+        interruptible_sleep_on(&gih.wairq);
 
-    mutex_lock(&gih.wrt_lock);
+        /* debug messages are kept in the same format as the wq version, 
+           for consistency.*/
+        if (DEBUG) printk(KERN_ALERT "[gih] Entering work queue function...\n");
 
-    n_out_byte = min((size_t)kfifo_len(&gih.data_buf), gih.write_size);
+        do_gettimeofday(&entry.time);
 
-    udelay(gih.sleep_msec * 1000 - TIME_DELTA);
+        mutex_lock(&gih.wrt_lock);
 
-    if (DEBUG) printk(KERN_ALERT "[gih] calling write\n");
-    out = file_write_kfifo(gih.dest_filp, &gih.data_buf, n_out_byte);
-    if (DEBUG) printk(KERN_ALERT "[gih] finished write\n");
+        n_out_byte = min((size_t)kfifo_len(&gih.data_buf), gih.write_size);
 
-    atomic_sub(out, &gih.data_wait);
+        udelay(gih.sleep_msec * 1000 - TIME_DELTA);
 
-    if (DEBUG) {
-        printk(KERN_ALERT "[gih] %zu bytes read from gih.\n", out);
-        printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
-            kfifo_len(&gih.data_buf));
-        printk(KERN_ALERT "[gih] data_wait is %d", atomic_read(&gih.data_wait));
+        if (DEBUG) printk(KERN_ALERT "[gih] calling write\n");
+        out = file_write_kfifo(gih.dest_filp, &gih.data_buf, n_out_byte);
+        if (DEBUG) printk(KERN_ALERT "[gih] finished write\n");
+
+        atomic_sub(out, &gih.data_wait);
+
+        if (DEBUG) {
+            printk(KERN_ALERT "[gih] %zu bytes read from gih.\n", out);
+            printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
+                kfifo_len(&gih.data_buf));
+            printk(KERN_ALERT "[gih] data_wait is %d", 
+                atomic_read(&gih.data_wait));
+        }
+
+        file_sync(gih.dest_filp);
+
+        mutex_unlock(&gih.wrt_lock);
+
+        if (DEBUG) 
+            printk(KERN_ALERT "[gih] %zu bytes written out to dest file.\n", 
+                out);
+
+        entry.byte_sent = -1,
+        entry.irq_count = log_devices[WQ_N_LOG_MINOR].irq_count++;
+        kfifo_in(&wq_n_buf, &entry, 1);
+
+        if (DEBUG) printk(KERN_ALERT "[log] WQN element num %u\n", 
+            (unsigned int)kfifo_len(&wq_n_buf));
+
+        exit.byte_sent = out;
+        exit.irq_count = log_devices[WQ_X_LOG_MINOR].irq_count++;
+        
+        do_gettimeofday(&exit.time);
+        kfifo_in(&wq_x_buf, &exit, 1);
+
+        if (DEBUG) printk(KERN_ALERT "[log] WQX element num %u\n", 
+            (unsigned int)kfifo_len(&wq_x_buf));
     }
 
-    file_sync(gih.dest_filp);
+    if (DEBUG) printk(KERN_ALERT "[gih] kthread existed.\n");
 
-    mutex_unlock(&gih.wrt_lock);
-
-    if (DEBUG) 
-        printk(KERN_ALERT "[gih] %zu bytes written out to dest file.\n", out);
-
-    entry.byte_sent = -1,
-    entry.irq_count = log_devices[WQ_N_LOG_MINOR].irq_count++;
-    kfifo_in(&wq_n_buf, &entry, 1);
-
-    if (DEBUG) printk(KERN_ALERT "[log] WQN element num %u\n", 
-        (unsigned int)kfifo_len(&wq_n_buf));
-
-    exit.byte_sent = out;
-    exit.irq_count = log_devices[WQ_X_LOG_MINOR].irq_count++;
-    
-    do_gettimeofday(&exit.time);
-    kfifo_in(&wq_x_buf, &exit, 1);
-
-    kfree(work);
-
-    if (DEBUG) printk(KERN_ALERT "[log] WQX element num %u\n", 
-        (unsigned int)kfifo_len(&wq_x_buf));
-
-    if (DEBUG) printk(KERN_ALERT "[gih] Exiting work queue function...\n");
+    /* returns total count of exiting while loop */
+    return log_devices[WQ_X_LOG_MINOR].irq_count;
 }
 
 /*
@@ -665,16 +676,12 @@ static void gih_do_work(struct work_struct * work) {
 static irqreturn_t gih_intr(int irq, void * data) {
     /* enqueue work, write log */
     struct log intr_log; 
-    struct work_struct * work;    
 
     if (DEBUG) printk(KERN_ALERT "[gih] INTERRUPT CAUGHT.\n");
 
     do_gettimeofday(&intr_log.time);
 
-    /* allocate and initialize work. Need to be GFP_ATOMIC in interrupt ctxt */
-    work = kmalloc(sizeof(struct work_struct), GFP_ATOMIC);
-    INIT_WORK(work, gih_do_work);
-    queue_work(gih.irq_wq, work);
+    wake_up_interruptible(&gih.waitq);
 
     intr_log.byte_sent = -1; 
     intr_log.irq_count = log_devices[INTR_LOG_MINOR].irq_count++;
@@ -904,6 +911,8 @@ static int __init gih_init(void) {
     /* data buffer of gih */
     INIT_KFIFO(data_buf);
     gih.data_buf = *(struct kfifo *)&data_buf;
+
+    init_waitqueue_head(&gih.waitq);
 
     /* I tried to do initialize these 3 kfifos here, but the program won't 
        compile... They're initialized at the beginning of this program. */
