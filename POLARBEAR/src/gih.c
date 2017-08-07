@@ -34,6 +34,7 @@
 #include <linux/device.h>
 #include <linux/kthread.h>
 #include <linux/wait.h>
+#include <linux/completion.h>
 
 #include <asm/uaccess.h>
 #include <asm/segment.h>
@@ -127,6 +128,7 @@ static int gih_open(struct inode * inode, struct file * filp) {
     // gih.irq_wq = create_workqueue(IRQ_WQ_NAME);
 
     gih.task = kthread_run(gih_do_work, NULL, GIH_THREAD);
+
     if (IS_ERR(gih.task)) {
         PTR_ERR(gih.task);
         printk(KERN_ALERT "[gih] CREATE KTHREAD FAILED, err code %d\n", err);
@@ -195,6 +197,7 @@ static int gih_close(struct inode * inode, struct file * filp) {
     /* if the device is not functioning, print the necessary message */
     if (!gih.setup) {
         kthread_stop(gih.task);
+        complete_all(&gih.comp);
         mutex_unlock(&gih.dev_open);
         printk(KERN_ALERT "[gih] Device hasn't been setup.\n");
         return 0;
@@ -203,6 +206,7 @@ static int gih_close(struct inode * inode, struct file * filp) {
     /* otherwise, release whatever should be released */
     if (gih.setup) {
         free_irq(gih.irq, (void*)&gih);
+        complete_all(&gih.comp);
         gih.setup = FALSE;      
     }
     kthread_stop(gih.task);
@@ -589,7 +593,7 @@ static int gih_do_work(void * data) {
     /* loop until kthread stops */
     while (!kthread_should_stop()) {
 
-        wait_event_interruptible(gih.waitq, gih.kthread_flag);
+        wait_for_completion_interruptible(&gih.comp);
 
         /* debug messages are kept in the same format as the wq version, 
            for consistency.*/
@@ -685,7 +689,8 @@ static irqreturn_t gih_intr(int irq, void * data) {
     do_gettimeofday(&intr_log.time);
 
     gih.kthread_flag = 1;
-    wake_up_interruptible(&gih.waitq);
+    complete(&gih.comp);
+    rereinit_completion(&gih.comp);
 
     intr_log.byte_sent = -1; 
     intr_log.irq_count = log_devices[INTR_LOG_MINOR].irq_count++;
@@ -916,7 +921,7 @@ static int __init gih_init(void) {
     INIT_KFIFO(data_buf);
     gih.data_buf = *(struct kfifo *)&data_buf;
 
-    init_waitqueue_head(&gih.waitq);
+    init_completion(&gih.comp);
 
     /* I tried to do initialize these 3 kfifos here, but the program won't 
        compile... They're initialized at the beginning of this program. */

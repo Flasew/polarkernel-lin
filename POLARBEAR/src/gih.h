@@ -82,18 +82,16 @@ DECLARE_KFIFO(data_buf, unsigned char, DATA_FIFO_SZ);
 typedef struct gih_dev {
     bool setup;                        /* if the device has been setup */
     bool keep_missed;                  /* keep the missing data on write? */
-    int kthread_flag;                  /* flag for wait queue */
     int irq;                           /* irq line to be registered */
     unsigned int sleep_msec;           /* time to sleep */
     size_t write_size;                 /* how much to write each time */
     dev_t dev_num;                     /* device number */
-    struct workqueue_struct * irq_wq;  /* work queue */
     struct file * dest_filp;           /* destination file pointer */
     struct class * gih_class;          /* for sysfs, class */
     struct device * gih_device;        /* for sysfs, device */
     struct task_struct * task;         /* task returned by kthread */
-    wait_queue_head_t waitq;           /* wait queue -> conditional variable */
     atomic_t data_wait;                /* number of data on wait */
+    struct completion comp;            /* completion structure */
     struct mutex dev_open;             /* dev can only be opening once */
     struct mutex wrt_lock;             /* mutex to protect write to file */
     struct cdev gih_cdev;              /* gih char device */
