@@ -92,6 +92,8 @@ static log_dev log_devices[3] = { 0 }; /* all the logging device, can be
  *
  *     NEW: now open call will not register irq not open file, ioctl's 
  *     start will do it. 
+ *
+ *     NEW in kmalloc version: works are allocated and initialized dynamically.
  *     
  * Arguments:
  *     @inode: inode pointer of the gih char device 
@@ -122,7 +124,7 @@ static int gih_open(struct inode * inode, struct file * filp) {
     atomic_set(&gih.data_wait, 0);
     gih.irq_wq = create_workqueue(IRQ_WQ_NAME);
     kfifo_reset(&gih.data_buf);
-    INIT_WORK(&gih.work, gih_do_work);
+    // INIT_WORK(&gih.work, gih_do_work);
 
     printk(KERN_ALERT "[gih] Remember to start the device with ioctl after "
         "configuration.\n");
@@ -624,6 +626,8 @@ static void gih_do_work(struct work_struct * work) {
     do_gettimeofday(&exit.time);
     kfifo_in(&wq_x_buf, &exit, 1);
 
+    free(work);
+
     if (DEBUG) printk(KERN_ALERT "[log] WQX element num %u\n", 
         (unsigned int)kfifo_len(&wq_x_buf));
 
@@ -648,6 +652,7 @@ static void gih_do_work(struct work_struct * work) {
  *     
  * Side Effects:
  *     Write a log to the intr_log device.
+ *     Allocate a work structure on the heap to pass to gih_do_work().
  *     
  * Error Condition: 
  *     Not really, if any happened there would be undefined behavior.
@@ -658,12 +663,15 @@ static void gih_do_work(struct work_struct * work) {
 static irqreturn_t gih_intr(int irq, void * data) {
     /* enqueue work, write log */
     struct log intr_log; 
+    struct work_struct * work;    
 
     if (DEBUG) printk(KERN_ALERT "[gih] INTERRUPT CAUGHT.\n");
 
     do_gettimeofday(&intr_log.time);
 
-    queue_work(gih.irq_wq, &gih.work);
+    work = kmalloc(sizeof(struct work_struct), GFP_ATOMIC);
+    INIT_WORK(work, gih_do_work);
+    queue_work(gih.irq_wq, work);
 
     intr_log.byte_sent = -1; 
     intr_log.irq_count = log_devices[INTR_LOG_MINOR].irq_count++;

@@ -91,7 +91,7 @@ typedef struct gih_dev {
     struct class * gih_class;          /* for sysfs, class */
     struct device * gih_device;        /* for sysfs, device */
     atomic_t data_wait;                /* number of data on wait */
-    struct work_struct work;           /* work to be put in the queue */
+    // struct work_struct work;           /* work to be put in the queue */
     struct mutex dev_open;             /* dev can only be opening once */
     struct mutex wrt_lock;             /* mutex to protect write to file */
     struct cdev gih_cdev;              /* gih char device */
