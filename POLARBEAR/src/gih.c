@@ -32,6 +32,8 @@
 #include <linux/delay.h>
 #include <linux/sysfs.h>
 #include <linux/device.h>
+#include <linux/kthread.h>
+#include <linux/wait.h>
 
 #include <asm/uaccess.h>
 #include <asm/segment.h>
@@ -49,7 +51,7 @@ static int gih_close(struct inode *, struct file *);
 static long gih_ioctl(struct file *, unsigned int, unsigned long);
 static ssize_t gih_write(struct file *, const char __user *, size_t, loff_t *);
 static irqreturn_t gih_intr(int, void *);
-static void gih_do_work(struct work_struct *);
+static int gih_do_work(void *);
 
 struct file_operations gih_fops = {
     .owner              = THIS_MODULE,
@@ -112,6 +114,8 @@ static log_dev log_devices[3] = { 0 }; /* all the logging device, can be
  *     0 on success, -ERRORCODE on failure.
  */
 static int gih_open(struct inode * inode, struct file * filp) {
+
+    int err = 0;
 
     /* lock the gih device, it can only be opened once */
     if (!mutex_trylock(&gih.dev_open)) {return -EBUSY;}
@@ -190,9 +194,9 @@ static int gih_close(struct inode * inode, struct file * filp) {
 
     /* if the device is not functioning, print the necessary message */
     if (!gih.setup) {
-        printk(KERN_ALERT "[gih] Device hasn't been setup.\n");
         kthread_stop(gih.task);
         mutex_unlock(&gih.dev_open);
+        printk(KERN_ALERT "[gih] Device hasn't been setup.\n");
         return 0;
     }
 
@@ -201,8 +205,7 @@ static int gih_close(struct inode * inode, struct file * filp) {
         free_irq(gih.irq, (void*)&gih);
         gih.setup = FALSE;      
     }
-    kthread_stop(struct task_struct *k);
-
+    kthread_stop(gih.task);
 
     mutex_lock(&gih.wrt_lock);
 
@@ -574,19 +577,19 @@ static long gih_ioctl(struct file * filp,
  * Return: 
  *     
  */
-static int gih_do_work(void) {
-
-    if (DEBUG) printk(KERN_ALERT "[gih] kthread started.\n");
+static int gih_do_work(void * data) {
 
     size_t n_out_byte;            /* number of byte to output */
     size_t out = 0;               /* number of byte actually outputted */
     struct log exit;
     struct log entry;
 
+    if (DEBUG) printk(KERN_ALERT "[gih] kthread started.\n");
+
     /* loop until kthread stops */
     while (!kthread_should_stop()) {
 
-        interruptible_sleep_on(&gih.wairq);
+        wait_event_interruptible(gih.waitq, gih.kthread_flag);
 
         /* debug messages are kept in the same format as the wq version, 
            for consistency.*/
@@ -681,6 +684,7 @@ static irqreturn_t gih_intr(int irq, void * data) {
 
     do_gettimeofday(&intr_log.time);
 
+    gih.kthread_flag = 1;
     wake_up_interruptible(&gih.waitq);
 
     intr_log.byte_sent = -1; 

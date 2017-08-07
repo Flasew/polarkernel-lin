@@ -82,7 +82,7 @@ DECLARE_KFIFO(data_buf, unsigned char, DATA_FIFO_SZ);
 typedef struct gih_dev {
     bool setup;                        /* if the device has been setup */
     bool keep_missed;                  /* keep the missing data on write? */
-    // bool waitflag;                     /* flag for wait queue */
+    int kthread_flag;                  /* flag for wait queue */
     int irq;                           /* irq line to be registered */
     unsigned int sleep_msec;           /* time to sleep */
     size_t write_size;                 /* how much to write each time */
