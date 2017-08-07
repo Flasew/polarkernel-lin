@@ -50,7 +50,9 @@ will not suffice -- it has to be running under the superuser.
 This module is developed under linux-4.10.28-generic. 
 Python client should run in both python2 and python3.
 
-This is the kmalloc version.
+XXX: This is the kmalloc version, which allocates a new work structure on the
+heap on each interrupt. It will not miss any interrupts, but performance is not
+as guaranteed. 
 
 [HOW TO COMPILE]
 ================
@@ -168,7 +170,6 @@ all running as intended.
 [ADDITIONAL INFORMATION]
 ========================
 Next steps:
-Implementing the delay with delayed_work structure to test performance. 
 Implementing the workqueue's functionality with plain kernel thread. 
 
 

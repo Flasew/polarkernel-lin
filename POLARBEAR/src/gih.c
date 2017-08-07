@@ -644,6 +644,8 @@ static void gih_do_work(struct work_struct * work) {
  *     Interrupt handler of the gih device. Top half will record a log of when 
  *     interrupt had happened; bottom half will queue the work of sending output
  *     data on the workqueue.
+ *
+ *     NEW in kmalloc version: dynamically allocate work when interrupt happens
  *     
  * Arguments:
  *     @irq
@@ -669,6 +671,7 @@ static irqreturn_t gih_intr(int irq, void * data) {
 
     do_gettimeofday(&intr_log.time);
 
+    /* allocate and initialize work. Need to be GFP_ATOMIC in interrupt ctxt */
     work = kmalloc(sizeof(struct work_struct), GFP_ATOMIC);
     INIT_WORK(work, gih_do_work);
     queue_work(gih.irq_wq, work);
