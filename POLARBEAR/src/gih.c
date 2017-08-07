@@ -626,7 +626,7 @@ static void gih_do_work(struct work_struct * work) {
     do_gettimeofday(&exit.time);
     kfifo_in(&wq_x_buf, &exit, 1);
 
-    free(work);
+    kfree(work);
 
     if (DEBUG) printk(KERN_ALERT "[log] WQX element num %u\n", 
         (unsigned int)kfifo_len(&wq_x_buf));
