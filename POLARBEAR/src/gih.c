@@ -457,17 +457,10 @@ static long gih_ioctl(struct file * filp,
 
                 if (DEBUG) 
                     printk(KERN_ALERT "[gih] Destination path configured "
-                        "to %s\n", gih.path);
+                            "to %s\n", gih.path);
 
-                gih.dest_filp = file_open(gih.path, O_WRONLY, S_IRWXUGO);
-
-                if (!gih.dest_filp) {
-                    printk(KERN_ALERT "[gih] ERROR setting destination path: "
-                            "file openeing failed.\n");
-                    error = -EBADF;
-                }
             }
-            
+
             break;
 
 
@@ -491,9 +484,17 @@ static long gih_ioctl(struct file * filp,
                     return error;
                 }
             
+                gih.dest_filp = file_open(gih.path, O_WRONLY, S_IRWXUGO);
+
+                if (!gih.dest_filp) {
+                    printk(KERN_ALERT "[gih] ERROR setting destination path: "
+                            "file openeing failed.\n");
+                    error = -EBADF;
+                    break;
+                }
                 gih.setup = TRUE;
                 printk(KERN_ALERT "[gih] Configuration finished, "
-                    "device started.\n");
+                        "device started.\n");
 
             }
             
@@ -512,6 +513,9 @@ static long gih_ioctl(struct file * filp,
                 
                 free_irq(gih.irq, (void*)&gih);
                 flush_workqueue(gih.irq_wq);
+
+                file_close(gih.dest_filp);
+                gih.dest_filp = NULL;
 
                 gih.setup = FALSE;
                 printk(KERN_ALERT "[gih] Device stopped running, "
