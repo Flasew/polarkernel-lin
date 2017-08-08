@@ -116,7 +116,6 @@ static log_dev log_devices[3] = { 0 }; /* all the logging device, can be
  */
 static int gih_open(struct inode * inode, struct file * filp) {
 
-    int err = 0;
 
     /* lock the gih device, it can only be opened once */
     if (!mutex_trylock(&gih.dev_open)) {return -EBUSY;}
@@ -127,14 +126,14 @@ static int gih_open(struct inode * inode, struct file * filp) {
     atomic_set(&gih.data_wait, 0);
     // gih.irq_wq = create_workqueue(IRQ_WQ_NAME);
 
-    // reinit_completion(&gih.comp);
-    // gih.task = kthread_run(gih_do_work, NULL, GIH_THREAD);
+    reinit_completion(&gih.comp);
+    gih.task = kthread_run(gih_start_do_work, NULL, GIH_THREAD);
 
-    // if (IS_ERR(gih.task)) {
-    //     PTR_ERR(gih.task);
-    //     printk(KERN_ALERT "[gih] CREATE KTHREAD FAILED, err code %d\n", err);
-    //     return -err;
-    // }
+    if (IS_ERR(gih.task)) {
+        PTR_ERR(gih.task);
+        printk(KERN_ALERT "[gih] CREATE KTHREAD FAILED, err code %d\n", err);
+        return -err;
+    }
 
     kfifo_reset(&gih.data_buf);
 
@@ -197,8 +196,8 @@ static int gih_close(struct inode * inode, struct file * filp) {
 
     /* if the device is not functioning, print the necessary message */
     if (!gih.setup) {
-        // complete_all(&gih.comp);
-        // kthread_stop(gih.task);
+        complete_all(&gih.comp);
+        kthread_stop(gih.task);
         mutex_unlock(&gih.dev_open);
         printk(KERN_ALERT "[gih] Device hasn't been setup.\n");
         return 0;
@@ -207,8 +206,8 @@ static int gih_close(struct inode * inode, struct file * filp) {
     /* otherwise, release whatever should be released */
     free_irq(gih.irq, (void*)&gih);
     gih.setup = FALSE;      
-    // complete_all(&gih.comp);
-    // kthread_stop(gih.task);
+    complete_all(&gih.comp);
+    kthread_stop(gih.task);
 
     mutex_lock(&gih.wrt_lock);
 
@@ -653,6 +652,27 @@ static int gih_do_work(void * data) {
     return log_devices[WQ_X_LOG_MINOR].irq_count;
 }
 
+static int gih_start_do_work(void * data) {
+
+    struct task_struct * task;
+
+    if (DEBUG) printk(KERN_ALERT "[gih] outer kthread started.\n");
+
+    while (!kthread_should_stop()) {
+
+        wait_for_completion_interruptible(&gih.comp);
+        if (!gih.setup) continue;
+
+        if (DEBUG) printk(KERN_ALERT "[gih] outer kthread creating write.\n");
+
+        task = kthread_run(gih_do_work, NULL, GIH_THREAD);
+        kthread_stop(task);
+    }
+    if (DEBUG) printk(KERN_ALERT "[gih] outer kthread exited.\n");
+    return 0;
+
+}
+
 /*
  * Function name: gih_intr
  * 
@@ -683,16 +703,13 @@ static int gih_do_work(void * data) {
  */
 static irqreturn_t gih_intr(int irq, void * data) {
     /* enqueue work, write log */
-    struct log intr_log;
-    struct task_struct * task; 
+    struct log intr_log; 
 
     if (DEBUG) printk(KERN_ALERT "[gih] INTERRUPT CAUGHT.\n");
 
     do_gettimeofday(&intr_log.time);
 
-    task = kthread_run(gih_do_work, NULL, GIH_THREAD);
-    kthread_stop(task);
-
+    complete(&gih.comp);
     //reinit_completion(&gih.comp);
 
     intr_log.byte_sent = -1; 
