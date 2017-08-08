@@ -45,6 +45,8 @@ will not suffice -- it has to be running under the superuser.
 
 This module is developed under linux-4.10.28-generic. 
 Python client should run in both python2 and python3.
+
+Multi thread version, most complicated but hopefully most useful...
  
 
 [HOW TO COMPILE]

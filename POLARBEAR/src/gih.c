@@ -127,14 +127,14 @@ static int gih_open(struct inode * inode, struct file * filp) {
     atomic_set(&gih.data_wait, 0);
     // gih.irq_wq = create_workqueue(IRQ_WQ_NAME);
 
-    reinit_completion(&gih.comp);
-    gih.task = kthread_run(gih_do_work, NULL, GIH_THREAD);
+    // reinit_completion(&gih.comp);
+    // gih.task = kthread_run(gih_do_work, NULL, GIH_THREAD);
 
-    if (IS_ERR(gih.task)) {
-        PTR_ERR(gih.task);
-        printk(KERN_ALERT "[gih] CREATE KTHREAD FAILED, err code %d\n", err);
-        return -err;
-    }
+    // if (IS_ERR(gih.task)) {
+    //     PTR_ERR(gih.task);
+    //     printk(KERN_ALERT "[gih] CREATE KTHREAD FAILED, err code %d\n", err);
+    //     return -err;
+    // }
 
     kfifo_reset(&gih.data_buf);
 
@@ -197,8 +197,8 @@ static int gih_close(struct inode * inode, struct file * filp) {
 
     /* if the device is not functioning, print the necessary message */
     if (!gih.setup) {
-        complete_all(&gih.comp);
-        kthread_stop(gih.task);
+        // complete_all(&gih.comp);
+        // kthread_stop(gih.task);
         mutex_unlock(&gih.dev_open);
         printk(KERN_ALERT "[gih] Device hasn't been setup.\n");
         return 0;
@@ -207,8 +207,8 @@ static int gih_close(struct inode * inode, struct file * filp) {
     /* otherwise, release whatever should be released */
     free_irq(gih.irq, (void*)&gih);
     gih.setup = FALSE;      
-    complete_all(&gih.comp);
-    kthread_stop(gih.task);
+    // complete_all(&gih.comp);
+    // kthread_stop(gih.task);
 
     mutex_lock(&gih.wrt_lock);
 
@@ -593,65 +593,61 @@ static int gih_do_work(void * data) {
 
     if (DEBUG) printk(KERN_ALERT "[gih] kthread started.\n");
 
-    /* loop until kthread stops */
-    while (!kthread_should_stop()) {
+    /* when thread is created, it does the write and then exits. */
 
-        wait_for_completion_interruptible(&gih.comp);
 
-        if (!gih.setup) continue;
+    /* debug messages are mostly kept in the same format as the wq version, 
+       for consistency.*/
+    if (DEBUG) printk(KERN_ALERT "[gih] Entering kthread function...\n");
 
-        /* debug messages are kept in the same format as the wq version, 
-           for consistency.*/
-        if (DEBUG) printk(KERN_ALERT "[gih] Entering work queue function...\n");
+    do_gettimeofday(&entry.time);
 
-        do_gettimeofday(&entry.time);
+    mutex_lock(&gih.wrt_lock);
 
-        mutex_lock(&gih.wrt_lock);
+    n_out_byte = min((size_t)kfifo_len(&gih.data_buf), gih.write_size);
 
-        n_out_byte = min((size_t)kfifo_len(&gih.data_buf), gih.write_size);
+    udelay(gih.sleep_msec * 1000 - TIME_DELTA);
 
-        udelay(gih.sleep_msec * 1000 - TIME_DELTA);
+    if (DEBUG) printk(KERN_ALERT "[gih] calling write\n");
+    out = file_write_kfifo(gih.dest_filp, &gih.data_buf, n_out_byte);
+    if (DEBUG) printk(KERN_ALERT "[gih] finished write\n");
 
-        if (DEBUG) printk(KERN_ALERT "[gih] calling write\n");
-        out = file_write_kfifo(gih.dest_filp, &gih.data_buf, n_out_byte);
-        if (DEBUG) printk(KERN_ALERT "[gih] finished write\n");
+    atomic_sub(out, &gih.data_wait);
 
-        atomic_sub(out, &gih.data_wait);
-
-        if (DEBUG) {
-            printk(KERN_ALERT "[gih] %zu bytes read from gih.\n", out);
-            printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
-                kfifo_len(&gih.data_buf));
-            printk(KERN_ALERT "[gih] data_wait is %d", 
-                atomic_read(&gih.data_wait));
-        }
-
-        file_sync(gih.dest_filp);
-
-        mutex_unlock(&gih.wrt_lock);
-
-        if (DEBUG) 
-            printk(KERN_ALERT "[gih] %zu bytes written out to dest file.\n", 
-                out);
-
-        entry.byte_sent = -1,
-        entry.irq_count = log_devices[WQ_N_LOG_MINOR].irq_count++;
-        kfifo_in(&wq_n_buf, &entry, 1);
-
-        if (DEBUG) printk(KERN_ALERT "[log] WQN element num %u\n", 
-            (unsigned int)kfifo_len(&wq_n_buf));
-
-        exit.byte_sent = out;
-        exit.irq_count = log_devices[WQ_X_LOG_MINOR].irq_count++;
-        
-        do_gettimeofday(&exit.time);
-        kfifo_in(&wq_x_buf, &exit, 1);
-
-        if (DEBUG) printk(KERN_ALERT "[log] WQX element num %u\n", 
-            (unsigned int)kfifo_len(&wq_x_buf));
+    if (DEBUG) {
+        printk(KERN_ALERT "[gih] %zu bytes read from gih.\n", out);
+        printk(KERN_ALERT "[gih] data_buf kfifo length is %d", 
+            kfifo_len(&gih.data_buf));
+        printk(KERN_ALERT "[gih] data_wait is %d", 
+            atomic_read(&gih.data_wait));
     }
 
+    file_sync(gih.dest_filp);
+
+    mutex_unlock(&gih.wrt_lock);
+
+    if (DEBUG) 
+        printk(KERN_ALERT "[gih] %zu bytes written out to dest file.\n", 
+            out);
+
+    entry.byte_sent = -1,
+    entry.irq_count = log_devices[WQ_N_LOG_MINOR].irq_count++;
+    kfifo_in(&wq_n_buf, &entry, 1);
+
+    if (DEBUG) printk(KERN_ALERT "[log] WQN element num %u\n", 
+        (unsigned int)kfifo_len(&wq_n_buf));
+
+    exit.byte_sent = out;
+    exit.irq_count = log_devices[WQ_X_LOG_MINOR].irq_count++;
+    
+    do_gettimeofday(&exit.time);
+    kfifo_in(&wq_x_buf, &exit, 1);
+
+    if (DEBUG) printk(KERN_ALERT "[log] WQX element num %u\n", 
+        (unsigned int)kfifo_len(&wq_x_buf));
+
     if (DEBUG) printk(KERN_ALERT "[gih] kthread exited.\n");
+
 
     /* returns total count of exiting while loop */
     return log_devices[WQ_X_LOG_MINOR].irq_count;
@@ -687,13 +683,16 @@ static int gih_do_work(void * data) {
  */
 static irqreturn_t gih_intr(int irq, void * data) {
     /* enqueue work, write log */
-    struct log intr_log; 
+    struct log intr_log;
+    struct task_struct * task; 
 
     if (DEBUG) printk(KERN_ALERT "[gih] INTERRUPT CAUGHT.\n");
 
     do_gettimeofday(&intr_log.time);
 
-    complete(&gih.comp);
+    task = kthread_run(gih_do_work, NULL, GIH_THREAD);
+    kthread_stop(task);
+
     //reinit_completion(&gih.comp);
 
     intr_log.byte_sent = -1; 
@@ -925,7 +924,7 @@ static int __init gih_init(void) {
     INIT_KFIFO(data_buf);
     gih.data_buf = *(struct kfifo *)&data_buf;
 
-    init_completion(&gih.comp);
+    // init_completion(&gih.comp);
 
     /* I tried to do initialize these 3 kfifos here, but the program won't 
        compile... They're initialized at the beginning of this program. */

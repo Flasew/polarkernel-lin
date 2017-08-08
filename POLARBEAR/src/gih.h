@@ -89,9 +89,9 @@ typedef struct gih_dev {
     struct file * dest_filp;           /* destination file pointer */
     struct class * gih_class;          /* for sysfs, class */
     struct device * gih_device;        /* for sysfs, device */
-    struct task_struct * task;         /* task returned by kthread */
+    // struct task_struct * task;         /* task returned by kthread */
     atomic_t data_wait;                /* number of data on wait */
-    struct completion comp;            /* completion structure */
+    // struct completion comp;            /* completion structure */
     struct mutex dev_open;             /* dev can only be opening once */
     struct mutex wrt_lock;             /* mutex to protect write to file */
     struct cdev gih_cdev;              /* gih char device */
