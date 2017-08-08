@@ -19,7 +19,7 @@ default:
 endif
 
 	
-pyconf:
+pyconf: $(PYSETUP)
 	python $(PWD)/$(PYSETUP) build
 	python3 $(PWD)/$(PYSETUP) build
 	cd ..
