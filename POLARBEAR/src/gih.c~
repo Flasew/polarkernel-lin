@@ -127,7 +127,6 @@ static int gih_open(struct inode * inode, struct file * filp) {
     atomic_set(&gih.data_wait, 0);
     // gih.irq_wq = create_workqueue(IRQ_WQ_NAME);
 
-    reinit_completion(&gih.comp);
     gih.task = kthread_run(gih_do_work, NULL, GIH_THREAD);
 
     if (IS_ERR(gih.task)) {
@@ -197,8 +196,8 @@ static int gih_close(struct inode * inode, struct file * filp) {
 
     /* if the device is not functioning, print the necessary message */
     if (!gih.setup) {
-        complete_all(&gih.comp);
         kthread_stop(gih.task);
+        complete_all(&gih.comp);
         mutex_unlock(&gih.dev_open);
         printk(KERN_ALERT "[gih] Device hasn't been setup.\n");
         return 0;
@@ -207,7 +206,7 @@ static int gih_close(struct inode * inode, struct file * filp) {
     /* otherwise, release whatever should be released */
     free_irq(gih.irq, (void*)&gih);
     gih.setup = FALSE;      
-    complete_all(&gih.comp);
+    complete(&gih.comp);
     kthread_stop(gih.task);
 
     mutex_lock(&gih.wrt_lock);
@@ -469,6 +468,15 @@ static long gih_ioctl(struct file * filp,
                     printk(KERN_ALERT "[gih] Destination path configured "
                         "to %s\n", gih.path);
 
+                gih.dest_filp = file_open(gih.path, O_WRONLY, S_IRWXUGO);
+
+                if (!gih.dest_filp) {
+                    printk(KERN_ALERT "[gih] ERROR setting destination path: "
+                            "file openeing failed.\n");
+                    error = -EBADF;
+                }
+            }
+            
             break;
 
 
@@ -491,17 +499,6 @@ static long gih_ioctl(struct file * filp,
                     printk(KERN_ALERT "[gih] IRQ REQUEST ERROR: %d\n", error);
                     return error;
                 }
-
-            
-                gih.dest_filp = file_open(gih.path, O_WRONLY, S_IRWXUGO);
-
-                if (!gih.dest_filp) {
-                    printk(KERN_ALERT "[gih] ERROR setting destination path: "
-                            "file openeing failed.\n");
-                    error = -EBADF;
-                    break;
-                }
-            }
             
                 gih.setup = TRUE;
                 printk(KERN_ALERT "[gih] Configuration finished, "
@@ -523,9 +520,7 @@ static long gih_ioctl(struct file * filp,
                 error = 0;
                 
                 free_irq(gih.irq, (void*)&gih);
-
-                file_close(gih.dest_filp);
-                gih.dest_filp = NULL;
+                // flush_workqueue(gih.irq_wq);
 
                 gih.setup = FALSE;
                 printk(KERN_ALERT "[gih] Device stopped running, "
@@ -594,11 +589,9 @@ static int gih_do_work(void * data) {
     if (DEBUG) printk(KERN_ALERT "[gih] kthread started.\n");
 
     /* loop until kthread stops */
-    while (!kthread_should_stop()) {
+    while (!kthread_should_stop() && gih.setup) {
 
         wait_for_completion_interruptible(&gih.comp);
-
-        if (!gih.setup) continue;
 
         /* debug messages are kept in the same format as the wq version, 
            for consistency.*/
@@ -651,7 +644,7 @@ static int gih_do_work(void * data) {
             (unsigned int)kfifo_len(&wq_x_buf));
     }
 
-    if (DEBUG) printk(KERN_ALERT "[gih] kthread exited.\n");
+    if (DEBUG) printk(KERN_ALERT "[gih] kthread existed.\n");
 
     /* returns total count of exiting while loop */
     return log_devices[WQ_X_LOG_MINOR].irq_count;
