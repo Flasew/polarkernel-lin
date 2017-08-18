@@ -482,7 +482,8 @@ static long gih_ioctl(struct file * filp,
                     return error;
                 }
             
-                gih.dest_filp = file_open(gih.path, O_WRONLY, S_IRWXUGO);
+                gih.dest_filp = file_open(gih.path, O_WRONLY | O_NONBLOCK, 
+                    S_IALLUGO);
 
                 if (!gih.dest_filp) {
                     printk(KERN_ALERT "[gih] ERROR setting destination path: "

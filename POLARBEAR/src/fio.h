@@ -45,7 +45,9 @@ static struct file * file_open(const char * path, int flags, int rights) {
     oldfs = get_fs();
     set_fs(get_ds());
 
+    printk(KERN_ALERT "[fio] Before filp open...\n");
     filp = filp_open(path, flags, rights);
+    printk(KERN_ALERT "[fio] After filp open...\n");
 
     set_fs(oldfs);
 
