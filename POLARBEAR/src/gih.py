@@ -13,6 +13,7 @@ import sys
 from sys import stderr
 from sys import stdout
 import os
+import struct
 import subprocess
 import gih_config
 
@@ -377,6 +378,7 @@ class Gih(object):
 
         Arguments:
             dataStr {str} -- string to be send out to the device
+                    {bytes} -- byte array to be send.
             block {bool} -- should the write call block if the device is full
 
         Returns:
@@ -394,12 +396,23 @@ class Gih(object):
             print("Error: device needs to be started prior to writing.")
             return -1
 
+        if type(dataStr) == str: 
+            dataBytes = dataStr.encode('ascii')
+        elif type(dataStr) == int:
+            dataBytes = struct.pack("I", dataStr)
+        elif type(dataStr) == float:
+            dataBytes = struct.pack("F", dataStr)
+        elif type(dataStr) == bytes:
+            dataBytes = dataStr
+        else:
+            raise ValueError("Unsupported data type.")
+        
         try:
             if block:
-                outByte = Gih.__gihFile.write(dataStr)
+                outByte = Gih.__gihFile.write(dataBytes)
                 Gih.__gihFile.flush()
             else:
-                outByte = os.write(Gih.__fd, dataStr.encode('ascii'))
+                outByte = os.write(Gih.__fd, dataBytes)
             return outByte
 
         except PermissionError:
@@ -539,7 +552,7 @@ class Gih(object):
         try:
             print('Opening gih device...', file = stderr)
             Gih.__fd  = os.open(Gih.__GIH_DEVICE, os.O_NONBLOCK | os.O_WRONLY)
-            Gih.__gihFile  = os.fdopen(Gih.__fd, 'w')
+            Gih.__gihFile  = os.fdopen(Gih.__fd, 'wb')
             Gih.__isOpened = True
             return True
 

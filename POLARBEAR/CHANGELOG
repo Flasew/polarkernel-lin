@@ -5,6 +5,15 @@ Author:   Weiyang Wang
 Date Created: Aug 4, 2017
 
 ==============================
+2017-08-21: Version 0.3.s
+
+Fixed file opening bug.
+
+Arbitrarily defined kernel thread priority to guarantee performance.
+
+Pending: python 2 & 3 issue
+
+==============================
 2017-08-07: Version 0.2.s
 
 Fixed some fatal bugs. Some of them also occur in other branches,
@@ -13,7 +22,7 @@ which needs to be taken care of.
 Changed a behavior on gih_close() which was previously not correct.
 
 ==============================
-2017-08-04: Version 0.1.d
+2017-08-04: Version 0.1.s
 
 This is the single kernel thread version, which loops in
 a single kernel thread and waits on completion (equiv. 
