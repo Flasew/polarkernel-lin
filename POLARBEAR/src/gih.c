@@ -35,6 +35,7 @@
 #include <linux/kthread.h>
 #include <linux/wait.h>
 #include <linux/completion.h>
+#include <linux/syscalls.h>
 
 #include <asm/uaccess.h>
 #include <asm/segment.h>
@@ -117,6 +118,7 @@ static log_dev log_devices[3] = { 0 }; /* all the logging device, can be
 static int gih_open(struct inode * inode, struct file * filp) {
 
     int err = 0;
+    struct sched_param param = { 51, };
 
     /* lock the gih device, it can only be opened once */
     if (!mutex_trylock(&gih.dev_open)) {return -EBUSY;}
@@ -129,6 +131,7 @@ static int gih_open(struct inode * inode, struct file * filp) {
 
     reinit_completion(&gih.comp);
     gih.task = kthread_run(gih_do_work, NULL, GIH_THREAD);
+    sched_setscheduler(gih.task, SCHED_FIFO, &param);
 
     if (IS_ERR(gih.task)) {
         PTR_ERR(gih.task);
@@ -493,7 +496,8 @@ static long gih_ioctl(struct file * filp,
                 }
 
             
-                gih.dest_filp = file_open(gih.path, O_WRONLY, S_IRWXUGO);
+                gih.dest_filp = file_open(gih.path, O_WRONLY | O_NONBLOCK,
+                        S_IALLUGO);
 
                 if (!gih.dest_filp) {
                     printk(KERN_ALERT "[gih] ERROR setting destination path: "

@@ -10,7 +10,7 @@
 #ifndef _GIH_H
 #define _GIH_H
 
-MODULE_LICENSE("Dual BSD/GPL");
+MODULE_LICENSE("GPL");
 
 #define TRUE 1
 #define FALSE 0
@@ -75,7 +75,7 @@ DECLARE_KFIFO(data_buf, unsigned char, DATA_FIFO_SZ);
 #define GIH_THREAD "gih writing kthread"
 #define PATH_MAX_LEN 128            /* Just a file name... should be enough */
 
-#define TIME_DELTA 200               /* time correction value, wait time will
+#define TIME_DELTA 100               /* time correction value, wait time will
                                        be reduced by this TIME_DELTA microsec
                                        to account for internal delays */ 
 
