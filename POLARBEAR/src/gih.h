@@ -15,7 +15,9 @@ MODULE_LICENSE("GPL");
 #define TRUE 1
 #define FALSE 0
 
-#define DEBUG 1
+#define DEBUG 0
+
+#define LOG_ON 0
 
 /* device names */
 #define GIH_DEV         "gih"       /* device that accepts user input */
@@ -94,6 +96,7 @@ typedef struct gih_dev {
     struct completion comp;            /* completion structure */
     struct mutex dev_open;             /* dev can only be opening once */
     struct mutex wrt_lock;             /* mutex to protect write to file */
+    struct mutex kth_lock;             /* mutex to protect kthread */
     struct cdev gih_cdev;              /* gih char device */
     struct cdev log_cdev;              /* log char device */
     struct kfifo data_buf;             /* buffer of data */
