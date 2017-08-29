@@ -203,8 +203,8 @@ static int gih_close(struct inode * inode, struct file * filp) {
 
     /* if the device is not functioning, print the necessary message */
     if (!gih.setup) {
-        kthread_stop(gih.task);
         complete_all(&gih.comp);
+        kthread_stop(gih.task);
         mutex_unlock(&gih.dev_open);
         printk(KERN_ALERT "[gih] Device hasn't been setup.\n");
         return 0;
@@ -623,7 +623,7 @@ static int gih_do_work(void * data) {
 
         n_out_byte = min((size_t)kfifo_len(&gih.data_buf), gih.write_size);
 
-        udelay(gih.sleep_msec * 1000 - TIME_DELTA);
+        usleep_range(gih.sleep_msec * 1000 - TIME_DELTA, gih.sleep_msec * 1000);
 
         if (DEBUG) printk(KERN_ALERT "[gih] calling write\n");
         out = file_write_kfifo(gih.dest_filp, &gih.data_buf, n_out_byte);

@@ -396,8 +396,11 @@ class Gih(object):
             print("Error: device needs to be started prior to writing.")
             return -1
 
-        if type(dataStr) == str: 
-            dataBytes = dataStr.encode('ascii')
+        if type(dataStr) == str:
+            if sys.version_info > (3, 0):
+                dataBytes = dataStr.encode('ascii')
+            else:
+                dataBytes = dataStr
         elif type(dataStr) == int:
             dataBytes = struct.pack("I", dataStr)
         elif type(dataStr) == float:
@@ -406,7 +409,7 @@ class Gih(object):
             dataBytes = dataStr
         else:
             raise ValueError("Unsupported data type.")
-        
+
         try:
             if block:
                 outByte = Gih.__gihFile.write(dataBytes)
