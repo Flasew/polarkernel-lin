@@ -1,0 +1,20 @@
+import serial
+import gih
+import time
+import subprocess
+
+s = serial.Serial('/dev/ttyS5')
+d = gih.Gih(18, 3, 16, 1, '/dev/ttyS4')
+
+d.start()
+
+subprocess.call("sudo stty -F /dev/ttyS4 9600 cs8 -cstopb -parenb", shell = True)
+subprocess.call("sudo stty -F /dev/ttyS5 1200 cs8 -cstopb -parenb", shell = True)
+
+while True:
+    time.sleep(1)
+        for i in range(31):
+            d.write(b'\x00')
+            d.write(b'\xF0')
+            d.write(b'\x0F')
+            d.write(b'\xFF')

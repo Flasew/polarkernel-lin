@@ -118,7 +118,7 @@ static log_dev log_devices[3] = { 0 }; /* all the logging device, can be
 static int gih_open(struct inode * inode, struct file * filp) {
 
     int error = 0;
-    struct sched_param param = { 51, };
+    struct sched_param param = { 99, };
 
     /* lock the gih device, it can only be opened once */
     if (!mutex_trylock(&gih.dev_open)) {return -EBUSY;}
