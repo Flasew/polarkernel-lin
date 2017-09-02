@@ -14,7 +14,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/signal.h>
-#include <linux/sched.h>
 #include <linux/time.h>
 #include <linux/kfifo.h>
 #include <linux/interrupt.h>
@@ -36,6 +35,8 @@
 #include <linux/wait.h>
 #include <linux/completion.h>
 #include <linux/syscalls.h>
+#include <linux/sched.h>
+#include <uapi/linux/sched/types.h>
 
 #include <asm/uaccess.h>
 #include <asm/segment.h>
@@ -118,7 +119,8 @@ static log_dev log_devices[3] = { 0 }; /* all the logging device, can be
 static int gih_open(struct inode * inode, struct file * filp) {
 
     int error = 0;
-    struct sched_param param = { 99, };
+    
+    struct sched_param param = { .sched_priority = 99 };
 
     /* lock the gih device, it can only be opened once */
     if (!mutex_trylock(&gih.dev_open)) {return -EBUSY;}
@@ -536,6 +538,7 @@ static long gih_ioctl(struct file * filp,
                 mutex_lock(&gih.wrt_lock);
                 file_close(gih.dest_filp);
                 gih.dest_filp = NULL;
+                reinit_completion(&gih.comp);
                 mutex_unlock(&gih.wrt_lock);
 
                 gih.setup = FALSE;
@@ -627,7 +630,13 @@ static int gih_do_work(void * data) {
         //usleep_range(gih.sleep_msec * 1000 - TIME_DELTA, gih.sleep_msec * 1000);
 
         if (DEBUG) printk(KERN_ALERT "[gih] calling write\n");
-        out = file_write_kfifo(gih.dest_filp, &gih.data_buf, n_out_byte);
+
+        if (gih.dest_filp != NULL)
+            out = file_write_kfifo(gih.dest_filp, 
+                    &gih.data_buf, n_out_byte);
+        else 
+            continue;
+
         if (DEBUG) printk(KERN_ALERT "[gih] finished write\n");
 
         atomic_sub(out, &gih.data_wait);
