@@ -5,6 +5,16 @@ Author:   Weiyang Wang
 Date Created: Aug 4, 2017
 
 ==============================
+2017-09-01: Version 0.4.s
+
+Now write accepts different type of input.
+
+Modified the schedule parameter so the priority is the highest (rt).
+
+Added some locking and checking mechanisms so even interrupt occurs,
+the program will not panic the whole system.
+
+==============================
 2017-08-21: Version 0.3.s
 
 Fixed file opening bug.
