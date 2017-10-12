@@ -10,7 +10,8 @@
 #ifndef _GIH_H
 #define _GIH_H
 
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL");              /* have to be GPL to use sched functions */
+MODULE_AUTHOR("Weiyang Wang");
 
 #define TRUE 1
 #define FALSE 0

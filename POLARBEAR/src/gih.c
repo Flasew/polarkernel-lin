@@ -340,11 +340,12 @@ static ssize_t gih_write(struct file * filp,
  *     
  * Description: 
  *     All ioctl commands are used to configure the gih device on its first 
- *     opening. There're four fields that user NEEDS TO specify: 
+ *     opening. There're five fields that user NEEDS TO specify: 
  *         -irq number to be registered
  *         -delay time before data is send out to destination file
  *         -amount of data to send out upon receive each interrupt
  *         -path of the destination file
+ *         -does a new write create queued data? (likely to be no)
  *     AFTER all these fields are set, call the last GIH_IOC_CONFIG_START case
  *     to finish configuration and start the gih device. GIH_IOC_CONFIG_START
  *     will register irq and open the destination file, which the gih_open() 
@@ -578,25 +579,29 @@ static long gih_ioctl(struct file * filp,
 }
 
 /*
- * Function name: 
+ * Function name: gih_do_work
  * 
  * Function prototype:
- *     
+ *     static int gih_do_work(void * data);
  *     
  * Description: 
- *     
+ *     Worker thread function. The thread is launched with SCHED_FIFO and RT
+ *     priority on gih device open. The thread keeps loop and waiting on a 
+ *     completion which would be signaled once an interrupt was caught. The
+ *     delay time is implemented function. 
  *     
  * Arguments:
- *     @
+ *     @data: unused
  *     
  * Side Effects:
- *     
+ *     Write the data hold in gih to the destination file after @gih.delay ms 
+ *     when interrupt happens. 
  *     
  * Error Condition: 
- *     
+ *     None unless fatal error occurs.
  *     
  * Return: 
- *     
+ *     total irq caught during thread alive. 
  */
 static int gih_do_work(void * data) {
 
@@ -690,10 +695,8 @@ static int gih_do_work(void * data) {
  *     
  * Description: 
  *     Interrupt handler of the gih device. Top half will record a log of when 
- *     interrupt had happened; bottom half will queue the work of sending output
- *     data on the workqueue.
- *
- *     NEW in kmalloc version: dynamically allocate work when interrupt happens
+ *     interrupt had happened; bottom half will signal the completion to start
+ *     file writing. 
  *     
  * Arguments:
  *     @irq
